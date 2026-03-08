@@ -971,6 +971,17 @@ drawSVG.addEventListener('mousedown',e=>{
     }
   }
 
+  // In SMART_MODE, if tapping on a stroke middle or endpoint, DON'T start drawing.
+  // Let mouseup handle the tap-to-select logic.
+  if (SMART_MODE) {
+    const strokeMid = findStrokeMidAt(p.x, p.y);
+    const endpoint = findEndpointAt(p.x, p.y);
+    if (strokeMid || endpoint) {
+      // Don't start drawing - mouseup will select this stroke/endpoint
+      return;
+    }
+  }
+
   // Start drawing from a dot (will determine if tap or drag on mouseup)
   const d = nearDot(p.x, p.y);
   if (d) {
@@ -1145,149 +1156,13 @@ drawSVG.addEventListener('mouseleave',()=>{
   renderCanvas();
 });
 
-// ═══════════════════════════════════════════════════════
-// DEBUG PANEL - Shows touch status on phone
-// ═══════════════════════════════════════════════════════
-const debugPanel = document.createElement('div');
-debugPanel.id = 'debug-panel';
-debugPanel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.9);color:#0f0;font-family:monospace;font-size:12px;padding:10px;z-index:9999;max-height:150px;overflow-y:auto';
-debugPanel.innerHTML = '<div style="color:#ff0;margin-bottom:5px">DEBUG MODE - Tap canvas to test</div>';
-document.body.appendChild(debugPanel);
-
-let debugLines = [];
-function debugLog(msg, color = '#0f0') {
-  const time = new Date().toLocaleTimeString();
-  debugLines.unshift(`<span style="color:${color}">[${time}] ${msg}</span>`);
-  if (debugLines.length > 10) debugLines.pop();
-  debugPanel.innerHTML = '<div style="color:#ff0;margin-bottom:5px">DEBUG MODE</div>' + debugLines.join('<br>');
-}
-
-// Log initial state
-debugLog('Touch device: ' + (IS_TOUCH_DEVICE ? 'YES' : 'NO'), '#ff0');
-debugLog('touchModeActive: ' + touchModeActive, '#ff0');
-debugLog('Thresholds - endpoint:' + getEndpointRadius() + ' snap:' + getSnapTouch(), '#ff0');
-
-// Self-test function for touch simulation
-window.testTouch = function(action = 'tap') {
-  const svg = document.getElementById('draw-svg');
-  const rect = svg.getBoundingClientRect();
-
-  // Calculate positions for different tests
-  const centerX = rect.left + rect.width / 2;
-  const centerY = rect.top + rect.height / 2;
-
-  debugLog('TEST: ' + action + ' at ' + centerX.toFixed(0) + ',' + centerY.toFixed(0), '#f0f');
-
-  function createTouch(x, y) {
-    return new Touch({
-      identifier: Date.now(),
-      target: svg,
-      clientX: x,
-      clientY: y,
-      pageX: x,
-      pageY: y
-    });
-  }
-
-  if (action === 'tap') {
-    const touch = createTouch(centerX, centerY);
-    svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [touch], targetTouches: [touch], changedTouches: [touch] }));
-    setTimeout(() => {
-      svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [touch] }));
-      debugLog('TEST: tap complete', '#0f0');
-    }, 50);
-  } else if (action === 'drag') {
-    const touch1 = createTouch(centerX, centerY);
-    svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [touch1], targetTouches: [touch1], changedTouches: [touch1] }));
-
-    // Simulate drag movement
-    let step = 0;
-    const dragInterval = setInterval(() => {
-      step++;
-      const touch = createTouch(centerX + step * 10, centerY);
-      svg.dispatchEvent(new TouchEvent('touchmove', { bubbles: true, cancelable: true, touches: [touch], targetTouches: [touch], changedTouches: [touch] }));
-      if (step >= 5) {
-        clearInterval(dragInterval);
-        const endTouch = createTouch(centerX + 50, centerY);
-        svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [endTouch] }));
-        debugLog('TEST: drag complete', '#0f0');
-      }
-    }, 50);
-  } else if (action === 'select-then-drag') {
-    // First tap to select a stroke - need to hit the MIDDLE of a stroke, not an endpoint
-    // The horizontal crossbar of A is at SVG y ≈ 229 (row 7), x from 38 to 162
-    // We need to hit the middle of the stroke, avoiding endpoints
-    const strokeMidX = rect.left + rect.width / 2;  // Center X
-    const strokeMidY = rect.top + rect.height * 0.55;  // ~55% down is near the crossbar
-    debugLog('TEST: Tapping to select stroke at ' + strokeMidX.toFixed(0) + ',' + strokeMidY.toFixed(0), '#ff0');
-
-    const tap1 = createTouch(strokeMidX, strokeMidY);
-    svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [tap1], targetTouches: [tap1], changedTouches: [tap1] }));
-    setTimeout(() => {
-      svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [tap1] }));
-
-      // Check what was selected
-      debugLog('TEST: After tap, expSelected=' + (expSelected ? expSelected.type : 'null'), '#ff0');
-
-      // Now drag the selected stroke to bend it
-      setTimeout(() => {
-        debugLog('TEST: Dragging to bend stroke...', '#ff0');
-        const drag1 = createTouch(strokeMidX, strokeMidY);
-        svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [drag1], targetTouches: [drag1], changedTouches: [drag1] }));
-
-        let step = 0;
-        const bendInterval = setInterval(() => {
-          step++;
-          const touch = createTouch(strokeMidX, strokeMidY + step * 20);  // Drag downward to bend
-          svg.dispatchEvent(new TouchEvent('touchmove', { bubbles: true, cancelable: true, touches: [touch], targetTouches: [touch], changedTouches: [touch] }));
-          debugLog('TEST: move step ' + step, '#888');
-          if (step >= 3) {
-            clearInterval(bendInterval);
-            const endTouch = createTouch(strokeMidX, strokeMidY + 60);
-            svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [endTouch] }));
-            debugLog('TEST: select-then-drag complete', '#0f0');
-          }
-        }, 100);
-      }, 500);
-    }, 50);
-  }
-};
-
-// Add test buttons to debug panel
-debugPanel.innerHTML += '<div style="margin-top:8px"><button onclick="testTouch(\'tap\')" style="margin-right:5px">Test Tap</button><button onclick="testTouch(\'drag\')">Test Drag</button></div>';
-
-// Auto-test if URL parameter is present
-const autoTest = new URLSearchParams(location.search).get('autotest');
-if (autoTest) {
-  debugLog('AUTO-TEST: ' + autoTest + ' in 2 seconds...', '#f0f');
-  setTimeout(() => {
-    testTouch(autoTest);
-  }, 2000);
-}
-
 // Touch events - same logic as mouse
 drawSVG.addEventListener('touchstart',e=>{
-  debugLog('TOUCHSTART fired!', '#0ff');
-  touchMoveCount = 0;  // Reset move counter
-
   e.preventDefault();
   activateTouchMode();
   lastTouchTime = Date.now();
 
-  const touch = e.touches[0];
-  debugLog('Raw touch: clientX=' + touch.clientX.toFixed(0) + ' clientY=' + touch.clientY.toFixed(0), '#fff');
-
-  const rect = drawSVG.getBoundingClientRect();
-  debugLog('SVG rect: left=' + rect.left.toFixed(0) + ' top=' + rect.top.toFixed(0) + ' w=' + rect.width.toFixed(0) + ' h=' + rect.height.toFixed(0), '#fff');
-
   const p = svgPt(e.touches[0]);
-  debugLog('SVG coords: x=' + p.x.toFixed(0) + ' y=' + p.y.toFixed(0), '#0f0');
-
-  // Check what's at this position
-  const dot = nearDot(p.x, p.y);
-  const endpoint = findEndpointAt(p.x, p.y);
-  const strokeMid = findStrokeMidAt(p.x, p.y);
-  debugLog('Found: dot=' + (dot?'YES':'no') + ' endpoint=' + (endpoint?'YES':'no') + ' stroke=' + (strokeMid?'YES':'no'), endpoint||strokeMid||dot ? '#0f0' : '#f00');
 
   if (tool === 'erase') {
     const si = nearStroke(p.x, p.y);
@@ -1298,6 +1173,7 @@ drawSVG.addEventListener('touchstart',e=>{
   pressStart = { x: p.x, y: p.y, time: Date.now() };
 
   if (SMART_MODE) {
+    // If already selected, check if tapping on the selected item to start drag
     if (expSelected && expSelected.type === 'stroke' && isOnSelectedStroke(p.x, p.y)) {
       pushUndo();
       const ss = getActStrokes();
@@ -1306,14 +1182,19 @@ drawSVG.addEventListener('touchstart',e=>{
         expDragging = { type: 'curve', strokeIdx: expSelected.strokeIdx,
           cx: s.curved ? s.cx : (s.x1 + s.x2) / 2, cy: s.curved ? s.cy : (s.y1 + s.y2) / 2 };
       }
-      // NOTE: Do NOT call renderCanvas() here - breaks iOS touch tracking
       return;
     }
     if (expSelected && expSelected.type === 'dot' && isOnSelectedDot(p.x, p.y)) {
       pushUndo();
       expDragging = { type: 'dot', strokeIdx: expSelected.strokeIdx,
         endpoint: expSelected.endpoint, startX: expSelected.x, startY: expSelected.y };
-      // NOTE: Do NOT call renderCanvas() here - breaks iOS touch tracking
+      return;
+    }
+
+    // If tapping on a stroke/endpoint, don't start drawing - let touchend handle selection
+    const strokeMid = findStrokeMidAt(p.x, p.y);
+    const endpoint = findEndpointAt(p.x, p.y);
+    if (strokeMid || endpoint) {
       return;
     }
   }
@@ -1321,20 +1202,13 @@ drawSVG.addEventListener('touchstart',e=>{
   const d = nearDot(p.x, p.y);
   if (d) {
     dragging = true; startDot = d; hoverDot = d;
-    debugLog('Set dragging=true, startDot at ' + d.c + ',' + d.r, '#ff0');
     // NOTE: Do NOT call renderCanvas() here! It rebuilds DOM and causes iOS
     // to lose track of the touch, preventing touchend from firing.
-  } else {
-    debugLog('No dot found for drawing', '#888');
   }
 },{passive:false});
 
-// Track touch moves for debugging
-let touchMoveCount = 0;
-
 drawSVG.addEventListener('touchmove',e=>{
   e.preventDefault();
-  touchMoveCount++;
   lastTouchTime = Date.now();
   const p = svgPt(e.touches[0]);
 
@@ -1371,9 +1245,8 @@ drawSVG.addEventListener('touchmove',e=>{
   if (!dotEq(d, hoverDot)) { hoverDot = d; renderCanvas(); }
 },{passive:false});
 
-// CRITICAL: Handle touch cancel - iOS may cancel touches
+// Handle touch cancel - iOS may cancel touches
 drawSVG.addEventListener('touchcancel',e=>{
-  debugLog('TOUCHCANCEL! iOS canceled the touch', '#f00');
   dragging = false;
   startDot = null;
   pressStart = null;
@@ -1382,13 +1255,10 @@ drawSVG.addEventListener('touchcancel',e=>{
 
 drawSVG.addEventListener('touchend',e=>{
   e.preventDefault();
-  debugLog('TOUCHEND fired! (moves=' + touchMoveCount + ')', '#f0f');
-  touchMoveCount = 0; // Reset for next touch
   lastTouchTime = Date.now();
   const p = svgPt(e.changedTouches[0]);
 
   if (SMART_MODE && expDragging) {
-    debugLog('Was dragging, ending drag', '#ff0');
     expDragging = null;
     expSelected = null;
     renderCanvas();
@@ -1400,23 +1270,18 @@ drawSVG.addEventListener('touchend',e=>{
     const duration = Date.now() - pressStart.time;
     const tapThresh = getTapThresh();
     const wasTap = dist < tapThresh && duration < TAP_TIME_LIMIT;
-    debugLog('Tap check: dist=' + dist.toFixed(0) + ' thresh=' + tapThresh + ' duration=' + duration + 'ms → ' + (wasTap ? 'TAP!' : 'NOT tap'), wasTap ? '#0f0' : '#f00');
 
     if (wasTap) {
       const endpoint = findEndpointAt(pressStart.x, pressStart.y);
       const strokeMid = findStrokeMidAt(pressStart.x, pressStart.y);
-      debugLog('Selection: endpoint=' + (endpoint?'YES':'no') + ' strokeMid=' + (strokeMid?'YES':'no'), '#0ff');
 
       if (endpoint) {
         expSelected = { type: 'dot', strokeIdx: endpoint.strokeIdx,
           endpoint: endpoint.endpoint, x: endpoint.x, y: endpoint.y };
-        debugLog('Selected DOT at stroke ' + endpoint.strokeIdx, '#0f0');
       } else if (strokeMid) {
         expSelected = { type: 'stroke', strokeIdx: strokeMid.strokeIdx };
-        debugLog('Selected STROKE ' + strokeMid.strokeIdx, '#0f0');
       } else {
         expSelected = null;
-        debugLog('Nothing to select, deselecting', '#ff0');
       }
       dragging = false; startDot = null; pressStart = null;
       renderCanvas();

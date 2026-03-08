@@ -95,6 +95,7 @@ Tests must pass before deployment (enforced by CI).
 | `/check` | Run tests and validate the project |
 | `/test-letter` | Test editing a specific letter |
 | `/export-test` | Test the OTF download functionality |
+| `/touch-debug` | Add/remove touch debugging instrumentation |
 
 ## Agents
 
@@ -102,7 +103,8 @@ Specialized agents for complex tasks (invoke via Task tool):
 
 | Agent | Purpose |
 |-------|---------|
-| `ui-tester` | Interactive UI testing with Puppeteer |
+| `ui-tester` | Interactive UI testing with Puppeteer (desktop only) |
+| `ios-touch-tester` | Debug iOS Safari touch issues |
 | `code-reviewer` | Review code changes for quality and issues |
 | `deployer` | Full deployment workflow with verification |
 | `feature-planner` | Design and plan new features |
@@ -124,3 +126,57 @@ Specialized agents for complex tasks (invoke via Task tool):
 - Vanilla JavaScript (no frameworks)
 - Pure functions in `src/` for testability
 - Uses ES6+ features (const/let, arrow functions, template literals)
+
+## iOS Touch Handling (Critical Learnings)
+
+This app supports touch interactions on iOS Safari. Key learnings from debugging:
+
+### iOS Safari Touch Event Quirks
+
+1. **Never call renderCanvas() in touchstart** - DOM rebuilds during touchstart cause iOS to lose track of the touch, and touchend will NEVER fire. This is Safari-specific; Chrome handles it fine.
+
+2. **Touch snap radius vs grid spacing** - If snap radius (55px for touch) exceeds grid spacing (31px), every canvas position finds a grid dot. Solution: Check for stroke/endpoint hits BEFORE checking for grid dots.
+
+3. **pressStart must be set before early returns** - The tap detection in touchend uses `pressStart` coordinates. Always set it before any conditional returns in touchstart.
+
+4. **Use touchstart position for hit detection** - In touchend, use `pressStart.x, pressStart.y` for selection, not the touchend position (which may have drifted).
+
+5. **Guard against duplicate touch/mouse events** - Touch devices may fire both touch AND mouse events. Use a timestamp guard (500ms) to prevent double-handling.
+
+### Testing Limitations
+
+- **Puppeteer uses Chromium, not Safari** - Puppeteer tests won't catch Safari-specific touch bugs
+- **iOS Simulator limitations** - Synthetic touch events via xcrun simctl don't fully replicate native touch behavior
+- **Real device testing required** - For touch bugs, test on actual iPhone/iPad
+
+### Touch Detection Priority (SMART_MODE)
+
+```javascript
+// In touchstart, check in this order:
+1. If selected item exists and touched → start dragging it
+2. If touching stroke/endpoint → return (let touchend handle selection)
+3. If touching grid dot → start line drawing
+```
+
+### Key Thresholds
+
+| Threshold | Desktop | Touch | Purpose |
+|-----------|---------|-------|---------|
+| SNAP | 22px | 55px | Grid dot detection |
+| TAP_THRESH | 10px | 25px | Tap vs drag detection |
+| ENDPOINT_RADIUS | 15px | 40px | Endpoint dot hit zone |
+| STROKE_MID_THRESH | 12px | 35px | Stroke middle hit zone |
+
+### Debug Pattern for Touch Issues
+
+When debugging touch issues, temporarily add a debug panel:
+```javascript
+const debugPanel = document.createElement('div');
+debugPanel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.9);color:#0f0;font-family:monospace;font-size:12px;padding:10px;z-index:9999';
+document.body.appendChild(debugPanel);
+
+function debugLog(msg) {
+  debugPanel.innerHTML = msg + '<br>' + debugPanel.innerHTML;
+}
+```
+Then log: touchstart position, what was found (dot/stroke/endpoint), touchend position, tap detection result.

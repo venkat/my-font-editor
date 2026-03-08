@@ -53,3 +53,26 @@ Ensure the dev server is running:
 ```bash
 npm run dev
 ```
+
+## Touch Testing Limitations
+
+**IMPORTANT**: Puppeteer uses Chromium, NOT Safari WebKit. This means:
+
+- Touch bugs specific to iOS Safari WILL NOT be caught by Puppeteer tests
+- Synthetic mouse events may not replicate touch behavior accurately
+- For touch-related issues, use the `ios-touch-tester` agent instead
+
+### What Puppeteer CAN test:
+- Click interactions (mouse events)
+- Form filling
+- Navigation
+- Visual layout
+- Desktop interactions
+
+### What Puppeteer CANNOT test:
+- iOS Safari touch event handling
+- Touch gesture recognition
+- Mobile-specific CSS/layout issues on real Safari
+- Touch event timing quirks
+
+For iOS touch debugging, see the `ios-touch-tester` agent or test on real devices.
