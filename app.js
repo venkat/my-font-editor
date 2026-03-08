@@ -1213,6 +1213,36 @@ window.testTouch = function(action = 'tap') {
         debugLog('TEST: drag complete', '#0f0');
       }
     }, 50);
+  } else if (action === 'select-then-drag') {
+    // First tap to select a stroke (top horizontal line of A is at y ≈ 43)
+    const strokeY = rect.top + 60;  // Near top of canvas where horizontal stroke is
+    debugLog('TEST: Tapping to select stroke...', '#ff0');
+
+    const tap1 = createTouch(centerX, strokeY);
+    svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [tap1], targetTouches: [tap1], changedTouches: [tap1] }));
+    setTimeout(() => {
+      svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [tap1] }));
+
+      // Now drag the selected stroke to bend it
+      setTimeout(() => {
+        debugLog('TEST: Dragging to bend stroke...', '#ff0');
+        const drag1 = createTouch(centerX, strokeY);
+        svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [drag1], targetTouches: [drag1], changedTouches: [drag1] }));
+
+        let step = 0;
+        const bendInterval = setInterval(() => {
+          step++;
+          const touch = createTouch(centerX, strokeY + step * 15);  // Drag downward to bend
+          svg.dispatchEvent(new TouchEvent('touchmove', { bubbles: true, cancelable: true, touches: [touch], targetTouches: [touch], changedTouches: [touch] }));
+          if (step >= 3) {
+            clearInterval(bendInterval);
+            const endTouch = createTouch(centerX, strokeY + 45);
+            svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [endTouch] }));
+            debugLog('TEST: select-then-drag complete', '#0f0');
+          }
+        }, 100);
+      }, 500);
+    }, 50);
   }
 };
 
