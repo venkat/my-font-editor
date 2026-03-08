@@ -72,6 +72,7 @@ Specialized agents for complex tasks (invoke via Task tool):
 | `deployer` | Full deployment workflow with verification |
 | `feature-planner` | Design and plan new features |
 | `font-inspector` | Analyze font generation and glyph output |
+| `ux-designer` | Kid-friendly UX review and improvements |
 
 ## Deployment
 
