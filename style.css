@@ -184,33 +184,6 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
 }
 .wb:hover,.wb.active{border-color:var(--pu);background:#ede9fe}
 
-/* Segment bar */
-.seg-bar{
-  padding:4px 8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;
-  border-bottom:2px solid var(--br);background:#faf8ff
-}
-.seg-lbl{
-  font-size:.6rem;font-weight:900;text-transform:uppercase;letter-spacing:.1em;
-  color:var(--mt);white-space:nowrap
-}
-.seg-tab{
-  display:flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;
-  border:2px solid var(--br);background:#f9f8ff;cursor:pointer;
-  font-family:'Nunito',sans-serif;font-size:.72rem;font-weight:800;color:var(--tx);transition:all .1s
-}
-.seg-tab:hover{border-color:var(--pu);background:#f0e8ff;color:var(--pu)}
-.seg-tab.active{background:var(--pu);border-color:var(--pu);color:white}
-.seg-tab .del{opacity:.6;font-size:.9rem;line-height:1;cursor:pointer;padding:0 1px}
-.seg-tab .del:hover{opacity:1}
-.seg-tab.active .del{opacity:.7}
-.seg-tab.active .del:hover{opacity:1}
-.seg-add{
-  padding:3px 9px;border-radius:20px;border:2px dashed var(--br);background:transparent;
-  cursor:pointer;font-family:'Nunito',sans-serif;font-size:.72rem;font-weight:800;
-  color:var(--mt);transition:all .1s
-}
-.seg-add:hover{border-color:var(--pu);color:var(--pu);background:#f0e8ff}
-
 /* Mini preview */
 .mini-box{padding:5px 10px;border-bottom:2px solid var(--br)}
 .mini-lbl{font-size:.52rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--mt)}

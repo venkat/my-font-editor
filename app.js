@@ -150,9 +150,10 @@ const FD = {
 function expandFont() {
   const R = {};
   for (const [l,segs] of Object.entries(FD)) {
-    R[l] = segs.map(seg => seg.map(([c1,r1,c2,r2]) => ({
+    // Flatten all segments into a single array of strokes
+    R[l] = segs.flat().map(([c1,r1,c2,r2]) => ({
       x1:MX+c1*SP, y1:MY+r1*SP, x2:MX+c2*SP, y2:MY+r2*SP, color:'#1e1b2e', w:11
-    })));
+    }));
   }
   return R;
 }
@@ -161,9 +162,8 @@ function expandFont() {
 // STATE
 // ═══════════════════════════════════════════════════════
 let curLetter = 'A';
-let curSeg    = 0;
-let glyphs    = {};   // { letter: Array<Array<Stroke>> }
-let undoStk   = {};   // { 'A_0': [...JSON strings...] }
+let glyphs    = {};   // { letter: Array<Stroke> }
+let undoStk   = {};   // { 'A': [...JSON strings...] }
 let tool      = 'draw';
 let penWidth  = 11;
 let dragging  = false;
@@ -187,12 +187,16 @@ const TAP_TIME_LIMIT = 300;        // Max time in ms to count as tap
     const raw = localStorage.getItem('fontMkr8');
     const saved = raw ? JSON.parse(raw) : null;
     if (saved) {
+      // Convert old nested segment format to flat array
       for (const l in saved) {
         const v = saved[l];
-        if (Array.isArray(v) && v.length > 0 && !Array.isArray(v[0])) saved[l] = [v];
+        if (Array.isArray(v) && v.length > 0 && Array.isArray(v[0])) {
+          // Old format: [[strokes...], [strokes...]] - flatten it
+          saved[l] = v.flat();
+        }
       }
       const def = expandFont();
-      for (const l of ALL_CHARS) { if (!saved[l]) saved[l] = def[l] || [[]]; }
+      for (const l of ALL_CHARS) { if (!saved[l]) saved[l] = def[l] || []; }
       glyphs = saved;
     } else {
       glyphs = expandFont();
@@ -203,12 +207,11 @@ const TAP_TIME_LIMIT = 300;        // Max time in ms to count as tap
 // ═══════════════════════════════════════════════════════
 // GLYPH HELPERS
 // ═══════════════════════════════════════════════════════
-function getSegs(l)    { if (!glyphs[l]||!glyphs[l].length) glyphs[l]=[[]]; return glyphs[l]; }
-function getActSeg()   { return getSegs(curLetter)[curSeg] || []; }
-function setActSeg(ss) { while(glyphs[curLetter].length<=curSeg) glyphs[curLetter].push([]); glyphs[curLetter][curSeg]=ss; }
-function allStk(l)     { return (glyphs[l]||[]).flat(); }
+function getStrokes(l) { if (!glyphs[l]) glyphs[l]=[]; return glyphs[l]; }
+function getActStrokes() { return getStrokes(curLetter); }
+function setActStrokes(ss) { glyphs[curLetter]=ss; }
+function allStk(l)     { return glyphs[l]||[]; }
 function hasAnyStk(l)  { return allStk(l).length > 0; }
-function clampSeg()    { const n=getSegs(curLetter).length; if(curSeg>=n)curSeg=n-1; if(curSeg<0)curSeg=0; }
 
 // ═══════════════════════════════════════════════════════
 // DOT GRID
@@ -227,8 +230,8 @@ function nearDot(px,py) {
 }
 function dotEq(a,b){return a&&b&&a.c===b.c&&a.r===b.r}
 function nearStroke(px,py) {
-  // Only searches active segment - handles both straight and curved strokes
-  const ss=getActSeg();
+  // Searches current letter's strokes - handles both straight and curved strokes
+  const ss=getActStrokes();
   for(let i=ss.length-1;i>=0;i--){
     const s=ss[i];
     const threshold = (s.w||11)/2 + 8;
@@ -258,7 +261,7 @@ function nearStroke(px,py) {
 // Find stroke endpoint (purple dot) near cursor
 function findEndpointAt(px, py, radius = 15) {
   if (!SMART_MODE) return null;
-  const ss = getActSeg();
+  const ss = getActStrokes();
   for (let i = 0; i < ss.length; i++) {
     const s = ss[i];
     // Check start point
@@ -276,7 +279,7 @@ function findEndpointAt(px, py, radius = 15) {
 // Find stroke for bending - detects clicks on the stroke itself (excludes endpoints)
 function findStrokeMidAt(px, py, threshold = 12) {
   if (!SMART_MODE) return null;
-  const ss = getActSeg();
+  const ss = getActStrokes();
   for (let i = ss.length - 1; i >= 0; i--) {
     const s = ss[i];
     // Check distance from endpoints first - must not be too close
@@ -411,11 +414,9 @@ function renderCanvas() {
 
   // ── Collect endpoints for dot rendering ──
   const endpoints = new Set();
-  for(const seg of getSegs(curLetter)) {
-    for(const s of seg) {
-      endpoints.add(`${s.x1},${s.y1}`);
-      endpoints.add(`${s.x2},${s.y2}`);
-    }
+  for(const s of getActStrokes()) {
+    endpoints.add(`${s.x1},${s.y1}`);
+    endpoints.add(`${s.x2},${s.y2}`);
   }
 
   // ── Dots FIRST (background grid, under strokes) ──
@@ -441,15 +442,10 @@ function renderCanvas() {
   }
 
   // ── Strokes ON TOP of background dots ──
-  const segs=getSegs(curLetter);
   const visCol=c=>c||'#1e1b2e';
+  const strokes=getActStrokes();
 
-  segs.forEach((seg,si)=>{
-    if(si===curSeg) return;
-    for(const s of seg) drawSVG.appendChild(mkStroke(s, visCol(s.color), 0.2));
-  });
-  const active=segs[curSeg]||[];
-  active.forEach((s,i)=>{
+  strokes.forEach((s,i)=>{
     const eh=tool==='erase'&&i===hoverSI;
     const isSelected = SMART_MODE && expSelected && expSelected.type === 'stroke' && expSelected.strokeIdx === i;
     const isHovered = SMART_MODE && expHover && expHover.type === 'stroke' && expHover.strokeIdx === i && !isSelected;
@@ -779,44 +775,11 @@ function updateLeft() {
     b.classList.toggle('active', b.dataset.l === curLetter));
 }
 function selectLetter(l){
-  curLetter=l; curSeg=0; clampSeg();
+  curLetter=l;
   dragging=false;startDot=null;hoverDot=null;hoverSI=-1;
   document.getElementById('badge').textContent=l;
   document.getElementById('hdr-title').textContent=`Letter "${l}"`;
-  renderSegBar(); renderCanvas();
-}
-
-// ═══════════════════════════════════════════════════════
-// SEGMENT BAR
-// ═══════════════════════════════════════════════════════
-const segBarEl=document.getElementById('seg-bar');
-function renderSegBar(){
-  segBarEl.innerHTML='';
-  const lbl=document.createElement('span');lbl.className='seg-lbl';lbl.textContent='Parts:';
-  segBarEl.appendChild(lbl);
-  const segs=getSegs(curLetter);
-  segs.forEach((seg,i)=>{
-    const tab=document.createElement('button');
-    tab.className='seg-tab'+(i===curSeg?' active':'');
-    const canDel=segs.length>1;
-    tab.innerHTML=`Part ${i+1}${canDel?` <span class="del" data-i="${i}">×</span>`:''}`;
-    tab.addEventListener('click',e=>{
-      if(e.target.classList.contains('del')){delSeg(parseInt(e.target.dataset.i));}
-      else{curSeg=i;renderSegBar();renderCanvas();}
-    });
-    segBarEl.appendChild(tab);
-  });
-  const add=document.createElement('button');add.className='seg-add';add.textContent='+ Add Part';
-  add.addEventListener('click',addSeg);segBarEl.appendChild(add);
-}
-function addSeg(){
-  getSegs(curLetter).push([]);curSeg=getSegs(curLetter).length-1;
-  renderSegBar();renderCanvas();
-}
-function delSeg(i){
-  const segs=getSegs(curLetter);
-  if(segs.length<=1){if(segs[0].length&&confirm('Clear all strokes?')){segs[0]=[];renderCanvas();}return;}
-  if(confirm(`Delete Part ${i+1}?`)){segs.splice(i,1);if(curSeg>=segs.length)curSeg=segs.length-1;renderSegBar();renderCanvas();}
+  renderCanvas();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -832,7 +795,7 @@ function svgPt(e){
 // Helper: Check if click is on a selected stroke
 function isOnSelectedStroke(px, py) {
   if (!expSelected || expSelected.type !== 'stroke') return false;
-  const ss = getActSeg();
+  const ss = getActStrokes();
   const s = ss[expSelected.strokeIdx];
   if (!s) return false;
   const threshold = (s.w || 11) / 2 + 12;
@@ -871,7 +834,7 @@ drawSVG.addEventListener('mousedown',e=>{
   // ── Erase mode: original behavior ──
   if (tool === 'erase') {
     const si = nearStroke(p.x, p.y);
-    if (si >= 0) { pushUndo(); getActSeg().splice(si, 1); hoverSI = -1; renderCanvas(); }
+    if (si >= 0) { pushUndo(); getActStrokes().splice(si, 1); hoverSI = -1; renderCanvas(); }
     return;
   }
 
@@ -884,7 +847,7 @@ drawSVG.addEventListener('mousedown',e=>{
     // If we have a selected stroke and click on it, start bending
     if (expSelected && expSelected.type === 'stroke' && isOnSelectedStroke(p.x, p.y)) {
       pushUndo();
-      const ss = getActSeg();
+      const ss = getActStrokes();
       const s = ss[expSelected.strokeIdx];
       if (s) {
         expDragging = {
@@ -931,7 +894,7 @@ drawSVG.addEventListener('mousemove',e=>{
   if (SMART_MODE && expDragging) {
     if (expDragging.type === 'curve') {
       // Bend the stroke - control point follows mouse (clamped)
-      const ss = getActSeg();
+      const ss = getActStrokes();
       const s = ss[expDragging.strokeIdx];
       if (s) {
         const clamped = clampControlPoint(s.x1, s.y1, s.x2, s.y2, p.x, p.y);
@@ -946,7 +909,7 @@ drawSVG.addEventListener('mousemove',e=>{
     if (expDragging.type === 'dot') {
       // Move dot - snap to grid
       const snapped = snapToGrid(p.x, p.y);
-      const ss = getActSeg();
+      const ss = getActStrokes();
       const s = ss[expDragging.strokeIdx];
       if (s) {
         const oldX = expDragging.endpoint === 'start' ? s.x1 : s.x2;
@@ -1063,8 +1026,7 @@ drawSVG.addEventListener('mouseup',e=>{
   if (d && !dotEq(d, startDot)) {
     pushUndo();
     if (!glyphs[curLetter]) glyphs[curLetter] = [];
-    while (glyphs[curLetter].length <= curSeg) glyphs[curLetter].push([]);
-    glyphs[curLetter][curSeg].push({x1:startDot.x, y1:startDot.y, x2:d.x, y2:d.y, color:STROKE_COLOR, w:penWidth});
+    glyphs[curLetter].push({x1:startDot.x, y1:startDot.y, x2:d.x, y2:d.y, color:STROKE_COLOR, w:penWidth});
     // Clear selection when new stroke is drawn
     if (SMART_MODE) expSelected = null;
   }
@@ -1090,7 +1052,7 @@ drawSVG.addEventListener('touchstart',e=>{
 
   if (tool === 'erase') {
     const si = nearStroke(p.x, p.y);
-    if (si >= 0) { pushUndo(); getActSeg().splice(si, 1); hoverSI = -1; renderCanvas(); }
+    if (si >= 0) { pushUndo(); getActStrokes().splice(si, 1); hoverSI = -1; renderCanvas(); }
     return;
   }
 
@@ -1099,7 +1061,7 @@ drawSVG.addEventListener('touchstart',e=>{
   if (SMART_MODE) {
     if (expSelected && expSelected.type === 'stroke' && isOnSelectedStroke(p.x, p.y)) {
       pushUndo();
-      const ss = getActSeg();
+      const ss = getActStrokes();
       const s = ss[expSelected.strokeIdx];
       if (s) {
         expDragging = { type: 'curve', strokeIdx: expSelected.strokeIdx,
@@ -1127,7 +1089,7 @@ drawSVG.addEventListener('touchmove',e=>{
 
   if (SMART_MODE && expDragging) {
     if (expDragging.type === 'curve') {
-      const ss = getActSeg();
+      const ss = getActStrokes();
       const s = ss[expDragging.strokeIdx];
       if (s) {
         const clamped = clampControlPoint(s.x1, s.y1, s.x2, s.y2, p.x, p.y);
@@ -1138,7 +1100,7 @@ drawSVG.addEventListener('touchmove',e=>{
     }
     if (expDragging.type === 'dot') {
       const snapped = snapToGrid(p.x, p.y);
-      const ss = getActSeg();
+      const ss = getActStrokes();
       const s = ss[expDragging.strokeIdx];
       if (s) {
         const oldX = expDragging.endpoint === 'start' ? s.x1 : s.x2;
@@ -1196,8 +1158,7 @@ drawSVG.addEventListener('touchend',e=>{
   if (d && !dotEq(d, startDot)) {
     pushUndo();
     if (!glyphs[curLetter]) glyphs[curLetter] = [];
-    while (glyphs[curLetter].length <= curSeg) glyphs[curLetter].push([]);
-    glyphs[curLetter][curSeg].push({x1:startDot.x, y1:startDot.y, x2:d.x, y2:d.y, color:STROKE_COLOR, w:penWidth});
+    glyphs[curLetter].push({x1:startDot.x, y1:startDot.y, x2:d.x, y2:d.y, color:STROKE_COLOR, w:penWidth});
     if (SMART_MODE) expSelected = null;
   }
   startDot = null;
@@ -1208,15 +1169,15 @@ drawSVG.addEventListener('touchend',e=>{
 // UNDO
 // ═══════════════════════════════════════════════════════
 function pushUndo(){
-  const k=`${curLetter}_${curSeg}`;
+  const k=curLetter;
   if(!undoStk[k])undoStk[k]=[];
-  undoStk[k].push(JSON.stringify(getActSeg()));
+  undoStk[k].push(JSON.stringify(getActStrokes()));
   if(undoStk[k].length>80)undoStk[k].shift();
 }
 function doUndo(){
-  const k=`${curLetter}_${curSeg}`,st=undoStk[k];
+  const k=curLetter,st=undoStk[k];
   if(!st||!st.length)return;
-  setActSeg(JSON.parse(st.pop()));renderCanvas();
+  setActStrokes(JSON.parse(st.pop()));renderCanvas();
 }
 document.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key==='z'){
@@ -1245,7 +1206,7 @@ document.getElementById('te').addEventListener('click',()=>{
   // If something is selected in experimental mode, do one-time erase of selection
   if (SMART_MODE && expSelected) {
     pushUndo();
-    const ss = getActSeg();
+    const ss = getActStrokes();
 
     if (expSelected.type === 'stroke') {
       // Delete the selected stroke
@@ -1258,7 +1219,7 @@ document.getElementById('te').addEventListener('click',()=>{
       const remaining = ss.filter(s =>
         !((s.x1 === dotX && s.y1 === dotY) || (s.x2 === dotX && s.y2 === dotY))
       );
-      setActSeg(remaining);
+      setActStrokes(remaining);
     }
 
     expSelected = null;
@@ -1274,8 +1235,8 @@ document.getElementById('te').addEventListener('click',()=>{
 });
 document.getElementById('tu').addEventListener('click',doUndo);
 document.getElementById('tc').addEventListener('click',()=>{
-  if(!getActSeg().length)return;
-  if(confirm(`Clear all strokes in Part ${curSeg+1} of "${curLetter}"?`)){pushUndo();setActSeg([]);renderCanvas();}
+  if(!getActStrokes().length)return;
+  if(confirm(`Clear all strokes for "${curLetter}"?`)){pushUndo();setActStrokes([]);renderCanvas();}
 });
 document.querySelectorAll('.wb').forEach(b=>{
   b.addEventListener('click',()=>{
@@ -1309,7 +1270,7 @@ document.getElementById('btn-otf').addEventListener('click',()=>{
 
 document.getElementById('btn-rst').addEventListener('click',()=>{
   if(confirm('Reset ALL letters to the default font? (Your changes will be lost!)')){
-    glyphs=expandFont();undoStk={};curSeg=0;renderSegBar();renderCanvas();
+    glyphs=expandFont();undoStk={};renderCanvas();
   }
 });
 
@@ -1379,7 +1340,6 @@ if (SMART_MODE) {
 // INIT
 // ═══════════════════════════════════════════════════════
 buildCharPicker();
-renderSegBar();
 requestAnimationFrame(() => {
   renderCanvas();  // renders editor canvas + triggers scheduleRegen → regenPreview
 });
