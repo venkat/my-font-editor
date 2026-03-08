@@ -73,6 +73,7 @@ Specialized agents for complex tasks (invoke via Task tool):
 | `feature-planner` | Design and plan new features |
 | `font-inspector` | Analyze font generation and glyph output |
 | `ux-designer` | Kid-friendly UX review and improvements |
+| `font-expert` | Typography guidance that makes font design accessible to everyone |
 
 ## Deployment
 
