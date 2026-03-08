@@ -1,0 +1,15 @@
+{
+  "name": "my-font-maker",
+  "version": "0.1.0",
+  "description": "Single-file browser font editor inspired by Brutalita",
+  "main": "my-font-maker.html",
+  "scripts": {
+    "start": "npx serve . --no-port-switching",
+    "open": "open my-font-maker.html"
+  },
+  "keywords": ["font", "editor", "opentype", "brutalita"],
+  "license": "MIT",
+  "devDependencies": {
+    "serve": "^14.0.0"
+  }
+}
