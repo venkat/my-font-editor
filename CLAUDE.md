@@ -61,6 +61,18 @@ No automated tests. Manual testing:
 | `/test-letter` | Test editing a specific letter |
 | `/export-test` | Test the OTF download functionality |
 
+## Agents
+
+Specialized agents for complex tasks (invoke via Task tool):
+
+| Agent | Purpose |
+|-------|---------|
+| `ui-tester` | Interactive UI testing with Puppeteer |
+| `code-reviewer` | Review code changes for quality and issues |
+| `deployer` | Full deployment workflow with verification |
+| `feature-planner` | Design and plan new features |
+| `font-inspector` | Analyze font generation and glyph output |
+
 ## Deployment
 
 - **Live URL**: https://venkat.io/my-font-editor/
