@@ -1163,6 +1163,7 @@ drawSVG.addEventListener('touchstart',e=>{
   lastTouchTime = Date.now();
 
   const p = svgPt(e.touches[0]);
+  console.log('[TOUCHSTART]', { x: Math.round(p.x), y: Math.round(p.y), expSelected: expSelected?.type || null });
 
   if (tool === 'erase') {
     const si = nearStroke(p.x, p.y);
@@ -1175,6 +1176,7 @@ drawSVG.addEventListener('touchstart',e=>{
   if (SMART_MODE) {
     // If already selected, check if tapping on the selected item to start drag
     if (expSelected && expSelected.type === 'stroke' && isOnSelectedStroke(p.x, p.y)) {
+      console.log('[TOUCHSTART] Starting curve drag on selected stroke');
       pushUndo();
       const ss = getActStrokes();
       const s = ss[expSelected.strokeIdx];
@@ -1185,6 +1187,7 @@ drawSVG.addEventListener('touchstart',e=>{
       return;
     }
     if (expSelected && expSelected.type === 'dot' && isOnSelectedDot(p.x, p.y)) {
+      console.log('[TOUCHSTART] Starting dot drag on selected dot');
       pushUndo();
       expDragging = { type: 'dot', strokeIdx: expSelected.strokeIdx,
         endpoint: expSelected.endpoint, startX: expSelected.x, startY: expSelected.y };
@@ -1195,15 +1198,19 @@ drawSVG.addEventListener('touchstart',e=>{
     const strokeMid = findStrokeMidAt(p.x, p.y);
     const endpoint = findEndpointAt(p.x, p.y);
     if (strokeMid || endpoint) {
+      console.log('[TOUCHSTART] Found stroke/endpoint, will select on touchend', { strokeMid: !!strokeMid, endpoint: !!endpoint });
       return;
     }
   }
 
   const d = nearDot(p.x, p.y);
   if (d) {
+    console.log('[TOUCHSTART] Starting line draw from dot', { col: d.c, row: d.r });
     dragging = true; startDot = d; hoverDot = d;
     // NOTE: Do NOT call renderCanvas() here! It rebuilds DOM and causes iOS
     // to lose track of the touch, preventing touchend from firing.
+  } else {
+    console.log('[TOUCHSTART] No dot found');
   }
 },{passive:false});
 
@@ -1247,6 +1254,7 @@ drawSVG.addEventListener('touchmove',e=>{
 
 // Handle touch cancel - iOS may cancel touches
 drawSVG.addEventListener('touchcancel',e=>{
+  console.log('[TOUCHCANCEL] iOS canceled the touch!');
   dragging = false;
   startDot = null;
   pressStart = null;
@@ -1257,8 +1265,10 @@ drawSVG.addEventListener('touchend',e=>{
   e.preventDefault();
   lastTouchTime = Date.now();
   const p = svgPt(e.changedTouches[0]);
+  console.log('[TOUCHEND]', { x: Math.round(p.x), y: Math.round(p.y), expDragging: expDragging?.type || null });
 
   if (SMART_MODE && expDragging) {
+    console.log('[TOUCHEND] Ending drag');
     expDragging = null;
     expSelected = null;
     renderCanvas();
@@ -1270,18 +1280,23 @@ drawSVG.addEventListener('touchend',e=>{
     const duration = Date.now() - pressStart.time;
     const tapThresh = getTapThresh();
     const wasTap = dist < tapThresh && duration < TAP_TIME_LIMIT;
+    console.log('[TOUCHEND] Tap check:', { dist: Math.round(dist), tapThresh, duration, wasTap });
 
     if (wasTap) {
       const endpoint = findEndpointAt(pressStart.x, pressStart.y);
       const strokeMid = findStrokeMidAt(pressStart.x, pressStart.y);
+      console.log('[TOUCHEND] Selection:', { endpoint: !!endpoint, strokeMid: !!strokeMid });
 
       if (endpoint) {
         expSelected = { type: 'dot', strokeIdx: endpoint.strokeIdx,
           endpoint: endpoint.endpoint, x: endpoint.x, y: endpoint.y };
+        console.log('[TOUCHEND] Selected DOT');
       } else if (strokeMid) {
         expSelected = { type: 'stroke', strokeIdx: strokeMid.strokeIdx };
+        console.log('[TOUCHEND] Selected STROKE');
       } else {
         expSelected = null;
+        console.log('[TOUCHEND] Nothing to select');
       }
       dragging = false; startDot = null; pressStart = null;
       renderCanvas();
