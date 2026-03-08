@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Font Maker</title>
+<script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.min.js"></script>
+<script src="https://unpkg.com/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- CHARACTER PICKER OVERLAY -->
+<div class="char-overlay" id="char-overlay">
+  <div class="char-panel" id="char-panel">
+    <div class="char-panel-hdr">
+      <h3>Choose a character</h3>
+      <button class="char-close" id="char-close">✕</button>
+    </div>
+    <span class="char-sec-lbl">Uppercase</span>
+    <div class="char-grid" id="char-grid-upper"></div>
+    <span class="char-sec-lbl">Lowercase</span>
+    <div class="char-grid" id="char-grid-lower"></div>
+    <span class="char-sec-lbl">Digits</span>
+    <div class="char-grid" id="char-grid-digits"></div>
+    <span class="char-sec-lbl">Symbols</span>
+    <div class="char-grid" id="char-grid-sym"></div>
+  </div>
+</div>
+
+<div class="shell">
+
+<!-- CENTER -->
+<div class="center">
+  <div class="center-hdr">
+    <div class="app-title">My Font Maker</div>
+    <span style="font-size:.75rem;font-weight:700;color:var(--mt)">Type in the preview below · draw strokes on the right</span>
+  </div>
+  <div class="preview-stage">
+    <div class="preview-area" id="preview-area">
+      <textarea id="prev-textarea" spellcheck="false">The Quick Brown Fox
+Jumps Over The Lazy Dog
+
+AaBbCcDdEeFfGgHhIiJj
+KkLlMmNnOoPpQqRrSsTt
+UuVvWwXxYyZz
+
+0123456789 !@#$%&*</textarea>
+      <svg id="font-render"></svg>
+      <div class="prev-hint" id="prev-hint" style="display:none">
+        <span>Start drawing letters on the right<br>They'll appear here as you type!</span>
+      </div>
+    </div>
+  </div>
+  <div class="export-row">
+    <span class="exp-lbl">Font name:</span>
+    <input type="text" class="font-name-input" id="font-name" placeholder="MyFont" value="MyFont">
+    <button class="eb otf"  id="btn-otf">Download OTF</button>
+    <button class="eb json" id="btn-json">{ } Save JSON</button>
+    <button class="eb rst"  id="btn-rst">Reset All</button>
+  </div>
+</div>
+
+<!-- RIGHT -->
+<div class="right" id="right-panel">
+  <div class="right-hdr">
+    <div class="badge" id="badge">A</div>
+    <div class="hdr-txt"><strong id="hdr-title">Letter "A"</strong>Click dots · drag to draw</div>
+    <button class="char-pick-btn" id="char-pick-btn">
+      <span class="pick-lbl">Edit letter...</span>
+    </button>
+  </div>
+  <div class="toolbar">
+    <div class="tg">
+      <button class="tb active" id="td"><span class="l">Draw</span></button>
+      <button class="tb"        id="te"><span class="l">Erase</span></button>
+    </div>
+    <div class="tg">
+      <button class="tb ub" id="tu"><span class="l">Undo</span></button>
+      <button class="tb xb" id="tc"><span class="l">Clear</span></button>
+    </div>
+    <div class="tg">
+      <button class="wb" data-w="5">
+        <svg width="22" height="8"><line x1="2" y1="4" x2="20" y2="4" stroke="#555" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <button class="wb active" data-w="11">
+        <svg width="22" height="8"><line x1="2" y1="4" x2="20" y2="4" stroke="#555" stroke-width="5" stroke-linecap="round"/></svg>
+      </button>
+      <button class="wb" data-w="20">
+        <svg width="22" height="8"><line x1="2" y1="4" x2="20" y2="4" stroke="#555" stroke-width="9" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="seg-bar" id="seg-bar"></div>
+  <div class="mini-box">
+    <div class="mini-lbl">Live preview of current letter</div>
+    <div class="mini-inner"><span id="mini-letter">A</span></div>
+  </div>
+  <div class="canvas-wrap">
+    <svg id="draw-svg"></svg>
+  </div>
+</div>
+
+</div><!-- .shell -->
+
+<script src="app.js"></script>
+</body>
+</html>

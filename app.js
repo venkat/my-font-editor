@@ -1,290 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>✏️ My Font Maker</title>
-<script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.min.js"></script>
-<script src="https://unpkg.com/polygon-clipping@0.15.7/dist/polygon-clipping.umd.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800;900&display=swap" rel="stylesheet">
-<style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --pu:#7c3aed;--pk:#ec4899;--gn:#22c55e;--bl:#3b82f6;--rd:#ef4444;
-  --bg:#f4f0ff;--cd:#ffffff;--tx:#1e1b2e;--mt:#9294a8;--br:#e5e1f0;
-  --fs:26px;--lh:42px;--pad:24px;
-}
-html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color:var(--tx);overflow:hidden}
+// ═══════════════════════════════════════════════════════
+// MY FONT MAKER - App JavaScript
+// ═══════════════════════════════════════════════════════
 
-/* ── SHELL ─────────────────────────────────────── */
-.shell{display:grid;grid-template-columns:1fr 296px;height:100vh;overflow:hidden}
-
-/* ── CHARACTER PICKER BUTTON ─────────────────────── */
-.char-pick-btn{
-  display:flex;align-items:center;gap:5px;padding:5px 10px;
-  border-radius:10px;border:2px solid var(--br);background:#f9f8ff;
-  cursor:pointer;font-family:'Nunito',sans-serif;font-size:.72rem;
-  font-weight:800;color:var(--tx);transition:all .12s;white-space:nowrap;
-  margin-left:auto;}
-.char-pick-btn:hover{border-color:var(--pu);background:#f0e8ff;color:var(--pu)}
-.char-pick-btn .pick-lbl{font-size:.9rem;font-weight:900}
-
-/* ── CHARACTER PICKER OVERLAY ────────────────────── */
-.char-overlay{
-  position:fixed;inset:0;z-index:100;
-  background:rgba(30,27,46,.55);backdrop-filter:blur(4px);
-  display:flex;align-items:center;justify-content:center;
-  opacity:0;pointer-events:none;transition:opacity .18s}
-.char-overlay.open{opacity:1;pointer-events:all}
-.char-panel{
-  background:white;border-radius:20px;padding:22px 22px 18px;
-  box-shadow:0 20px 60px rgba(30,27,46,.35);
-  width:420px;max-width:94vw;position:relative;
-  transform:translateY(10px) scale(.97);transition:transform .18s}
-.char-overlay.open .char-panel{transform:none}
-.char-panel-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-.char-panel-hdr h3{font-size:.9rem;font-weight:900;color:var(--tx);text-transform:uppercase;letter-spacing:.1em}
-.char-close{width:28px;height:28px;border-radius:8px;border:2px solid var(--br);
-  background:#f9f8ff;cursor:pointer;font-size:1rem;display:flex;align-items:center;
-  justify-content:center;color:var(--mt);transition:all .1s}
-.char-close:hover{border-color:var(--rd);background:#fff0f0;color:var(--rd)}
-.char-sec-lbl{font-size:.55rem;font-weight:900;text-transform:uppercase;letter-spacing:.12em;
-  color:var(--mt);margin-bottom:6px;display:block}
-.char-grid{display:grid;grid-template-columns:repeat(13,1fr);gap:4px;margin-bottom:12px}
-.cbtn{aspect-ratio:1;border-radius:8px;border:2px solid var(--br);background:#f9f8ff;
-  cursor:pointer;font-size:.95rem;font-weight:800;font-family:'Nunito',sans-serif;
-  color:var(--tx);display:flex;align-items:center;justify-content:center;
-  transition:all .1s;padding:0;min-width:0}
-.cbtn:hover{border-color:var(--pu);background:#f0e8ff;transform:scale(1.12)}
-.cbtn.active{background:var(--pu);border-color:var(--pu);color:#fff;
-  box-shadow:0 2px 8px rgba(124,58,237,.4)}
-
-/* ── CENTER ─────────────────────────────────────── */
-.center{display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
-.center-hdr{padding:12px 18px 10px;display:flex;align-items:center;gap:10px;
-  background:var(--cd);border-bottom:2px solid var(--br);flex-shrink:0}
-.app-title{font-size:1.2rem;font-weight:900;white-space:nowrap;
-  background:linear-gradient(135deg,var(--pu),var(--pk));
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.preview-stage{flex:1;display:flex;overflow:hidden;padding:14px 14px 0}
-.preview-area{flex:1;position:relative;border-radius:16px;overflow:hidden;
-  background:#1e1e24;box-shadow:0 4px 28px rgba(0,0,0,.25)}
-/* The real textarea — text visible via custom font */
-#prev-textarea{
-  position:absolute;inset:0;z-index:2;
-  background:transparent;border:none;outline:none;resize:none;
-  color:white;caret-color:#a78bfa;
-  font-family:'FontMakerPreview','Courier New',monospace;
-  font-size:18px;line-height:1.8em;
-  letter-spacing:0.02em;word-spacing:0.08em;
-  padding:22px;
-  overflow-y:auto;overflow-x:hidden;
-  white-space:pre-wrap;word-break:break-word;
-  cursor:text;}
-#prev-textarea::selection{background:rgba(167,139,250,.3)}
-/* SVG fallback overlay — only shown before font loads */
-#font-render{position:absolute;inset:0;pointer-events:none;z-index:1;
-  overflow:visible;will-change:transform}
-.prev-hint{position:absolute;inset:0;display:flex;align-items:center;
-  justify-content:center;pointer-events:none;z-index:3}
-.prev-hint span{color:var(--mt);font-size:.95rem;font-weight:700;font-style:italic;
-  text-align:center;line-height:1.8;background:rgba(255,255,255,.9);
-  padding:10px 18px;border-radius:12px}
-.export-row{display:flex;gap:8px;flex-shrink:0;padding:0 18px 14px;align-items:center}
-.exp-lbl{font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.1em;
-  color:var(--mt);white-space:nowrap}
-.font-name-input{padding:7px 12px;border-radius:10px;border:2px solid var(--br);
-  font-family:'Nunito',sans-serif;font-size:.85rem;font-weight:700;width:140px;
-  outline:none;transition:border-color .15s}
-.font-name-input:focus{border-color:var(--pu)}
-.font-name-input::placeholder{color:var(--mt);font-weight:600}
-.eb{padding:7px 13px;border-radius:10px;border:none;cursor:pointer;
-  font-family:'Nunito',sans-serif;font-size:.8rem;font-weight:800;
-  display:flex;align-items:center;gap:5px;transition:all .12s}
-.eb:hover{transform:translateY(-1px)}
-.eb.otf{background:var(--pu);color:#fff;box-shadow:0 3px 10px rgba(124,58,237,.35)}
-.eb.json{background:#f0fdf4;color:#15803d;border:2px solid #bbf7d0}
-.eb.json:hover{background:#dcfce7}
-.eb.rst{background:#fff0f0;color:var(--rd);border:2px solid #fecdd3;margin-left:auto}
-.eb.rst:hover{background:#ffe4e6}
-
-/* ── RIGHT: editor ──────────────────────────────── */
-.right{background:var(--cd);border-left:2px solid var(--br);overflow-y:auto;
-  scrollbar-width:thin;scrollbar-color:var(--br) transparent}
-.right::-webkit-scrollbar{width:3px}
-.right::-webkit-scrollbar-thumb{background:var(--br);border-radius:3px}
-.right-hdr{padding:9px 12px;border-bottom:2px solid var(--br);display:flex;
-  align-items:center;gap:8px;position:sticky;top:0;background:var(--cd);z-index:20}
-.badge{width:42px;height:42px;border-radius:12px;
-  background:linear-gradient(135deg,var(--pu),var(--pk));color:white;
-  font-size:1.55rem;font-weight:900;display:flex;align-items:center;
-  justify-content:center;box-shadow:0 3px 10px rgba(124,58,237,.4);flex-shrink:0;line-height:1}
-.hdr-txt{font-size:.72rem;font-weight:800;color:var(--mt);line-height:1.4}
-.hdr-txt strong{display:block;font-size:.88rem;color:var(--tx)}
-/* toolbar */
-.toolbar{padding:7px 9px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;
-  border-bottom:2px solid var(--br)}
-.tg{display:flex;gap:2px;background:#f9f8ff;border:2px solid var(--br);
-  border-radius:9px;padding:2px}
-.tb{padding:5px 7px;border-radius:6px;border:none;background:transparent;cursor:pointer;
-  font-size:.9rem;font-family:'Nunito',sans-serif;font-weight:800;
-  display:flex;align-items:center;gap:2px;transition:all .1s;color:var(--tx);white-space:nowrap}
-.tb .l{font-size:.54rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--mt)}
-.tb:hover{background:#ede9fe;color:var(--pu)}
-.tb.active{background:var(--pu);color:white}
-.tb.active .l{color:rgba(255,255,255,.75)}
-.tb.ub:hover{background:#eff6ff;color:var(--bl)}
-.tb.xb:hover{background:#fff0f0;color:var(--rd)}
-.wb{width:30px;height:26px;border-radius:6px;border:2px solid var(--br);background:#f9f8ff;
-  cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .1s}
-.wb:hover,.wb.active{border-color:var(--pu);background:#ede9fe}
-/* segment bar */
-.seg-bar{padding:6px 10px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;
-  border-bottom:2px solid var(--br);background:#faf8ff}
-.seg-lbl{font-size:.6rem;font-weight:900;text-transform:uppercase;letter-spacing:.1em;
-  color:var(--mt);white-space:nowrap}
-.seg-tab{display:flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;
-  border:2px solid var(--br);background:#f9f8ff;cursor:pointer;
-  font-family:'Nunito',sans-serif;font-size:.72rem;font-weight:800;color:var(--tx);transition:all .1s}
-.seg-tab:hover{border-color:var(--pu);background:#f0e8ff;color:var(--pu)}
-.seg-tab.active{background:var(--pu);border-color:var(--pu);color:white}
-.seg-tab .del{opacity:.6;font-size:.9rem;line-height:1;cursor:pointer;padding:0 1px}
-.seg-tab .del:hover{opacity:1}
-.seg-tab.active .del{opacity:.7}
-.seg-tab.active .del:hover{opacity:1}
-.seg-add{padding:3px 9px;border-radius:20px;border:2px dashed var(--br);background:transparent;
-  cursor:pointer;font-family:'Nunito',sans-serif;font-size:.72rem;font-weight:800;
-  color:var(--mt);transition:all .1s}
-.seg-add:hover{border-color:var(--pu);color:var(--pu);background:#f0e8ff}
-/* mini preview */
-.mini-box{padding:7px 12px 6px;border-bottom:2px solid var(--br)}
-.mini-lbl{font-size:.56rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--mt)}
-.mini-inner{background:#f9f8ff;border-radius:9px;border:2px solid var(--br);
-  height:62px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-top:4px}
-#mini-letter{font-family:'FontMakerPreview','Nunito',sans-serif;font-size:42px;color:#1e1b2e;line-height:1}
-/* canvas wrap */
-.canvas-wrap{padding:10px;display:flex;justify-content:center}
-#draw-svg{border-radius:10px;background:white;box-shadow:0 3px 18px rgba(0,0,0,.1);
-  cursor:crosshair;touch-action:none;display:block}
-#draw-svg.erase{cursor:cell}
-/* Experimental: cursor states */
-#draw-svg.exp-grab{cursor:grab}
-#draw-svg.exp-grabbing{cursor:grabbing}
-#draw-svg.exp-curve{cursor:crosshair}
-/* Experimental: hint tooltip */
-.exp-hint{position:fixed;background:rgba(30,27,46,.9);color:white;padding:6px 12px;
-  border-radius:8px;font-size:.75rem;font-weight:700;pointer-events:none;z-index:200;
-  transform:translate(-50%,-100%);margin-top:-12px;white-space:nowrap;
-  box-shadow:0 4px 12px rgba(0,0,0,.25)}
-.exp-hint::after{content:'';position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);
-  border:6px solid transparent;border-top-color:rgba(30,27,46,.9)}
-.exp-hint-dismiss{position:absolute;top:-6px;right:-6px;width:18px;height:18px;
-  background:#ef4444;border-radius:50%;color:white;font-size:10px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;border:2px solid white}
-/* Experimental: toolbar mode buttons */
-.tb.exp-move{background:#eff6ff;color:var(--bl)}
-.tb.exp-curve{background:#fef3c7;color:#d97706}
-</style>
-</head>
-<body>
-<!-- CHARACTER PICKER OVERLAY -->
-<div class="char-overlay" id="char-overlay">
-  <div class="char-panel" id="char-panel">
-    <div class="char-panel-hdr">
-      <h3>Choose a character</h3>
-      <button class="char-close" id="char-close">✕</button>
-    </div>
-    <span class="char-sec-lbl">Uppercase</span>
-    <div class="char-grid" id="char-grid-upper"></div>
-    <span class="char-sec-lbl">Lowercase</span>
-    <div class="char-grid" id="char-grid-lower"></div>
-    <span class="char-sec-lbl">Digits</span>
-    <div class="char-grid" id="char-grid-digits"></div>
-    <span class="char-sec-lbl">Symbols</span>
-    <div class="char-grid" id="char-grid-sym"></div>
-  </div>
-</div>
-
-<div class="shell">
-
-<!-- CENTER -->
-<div class="center">
-  <div class="center-hdr">
-    <div class="app-title">✏️ Font Maker</div>
-    <span style="font-size:.75rem;font-weight:700;color:var(--mt)">Type in the preview below · draw strokes on the right →</span>
-  </div>
-  <div class="preview-stage">
-    <div class="preview-area" id="preview-area">
-      <textarea id="prev-textarea" spellcheck="false">The Quick Brown Fox
-Jumps Over The Lazy Dog
-
-AaBbCcDdEeFfGgHhIiJj
-KkLlMmNnOoPpQqRrSsTt
-UuVvWwXxYyZz
-
-0123456789 !@#$%&*</textarea>
-      <svg id="font-render"></svg>
-      <div class="prev-hint" id="prev-hint" style="display:none">
-        <span>Start drawing letters on the right →<br>They'll appear here as you type!</span>
-      </div>
-    </div>
-  </div>
-  <div class="export-row">
-    <span class="exp-lbl">Font name:</span>
-    <input type="text" class="font-name-input" id="font-name" placeholder="MyFont" value="MyFont">
-    <button class="eb otf"  id="btn-otf">⬇️ Download OTF</button>
-    <button class="eb json" id="btn-json">{ } Save JSON</button>
-    <button class="eb rst"  id="btn-rst">🔄 Reset All</button>
-  </div>
-</div>
-
-<!-- RIGHT -->
-<div class="right" id="right-panel">
-  <div class="right-hdr">
-    <div class="badge" id="badge">A</div>
-    <div class="hdr-txt"><strong id="hdr-title">Letter "A"</strong>Click dots · drag to draw</div>
-    <button class="char-pick-btn" id="char-pick-btn">
-      ✏️ <span class="pick-lbl">Edit letter…</span>
-    </button>
-  </div>
-  <div class="toolbar">
-    <div class="tg">
-      <button class="tb active" id="td">🖊️<span class="l">Draw</span></button>
-      <button class="tb"        id="te">🧹<span class="l">Erase</span></button>
-    </div>
-    <div class="tg">
-      <button class="tb ub" id="tu">↩️<span class="l">Undo</span></button>
-      <button class="tb xb" id="tc">🗑️<span class="l">Clear</span></button>
-    </div>
-    <div class="tg">
-      <button class="wb" data-w="5">
-        <svg width="22" height="8"><line x1="2" y1="4" x2="20" y2="4" stroke="#555" stroke-width="2" stroke-linecap="round"/></svg>
-      </button>
-      <button class="wb active" data-w="11">
-        <svg width="22" height="8"><line x1="2" y1="4" x2="20" y2="4" stroke="#555" stroke-width="5" stroke-linecap="round"/></svg>
-      </button>
-      <button class="wb" data-w="20">
-        <svg width="22" height="8"><line x1="2" y1="4" x2="20" y2="4" stroke="#555" stroke-width="9" stroke-linecap="round"/></svg>
-      </button>
-    </div>
-  </div>
-  <div class="seg-bar" id="seg-bar"></div>
-  <div class="mini-box">
-    <div class="mini-lbl">Live preview of current letter</div>
-    <div class="mini-inner"><span id="mini-letter">A</span></div>
-  </div>
-  <div class="canvas-wrap">
-    <svg id="draw-svg"></svg>
-  </div>
-</div>
-
-</div><!-- .shell -->
-
-<script>
 // ═══════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════
-const COLS=4, ROWS=12, SP=40, MX=20, MY=20;
+const COLS=4, ROWS=12, SP=40, MX=20, MY=15;
 const CW = COLS*SP + MX*2;            // 200
 // Row landmarks — declared before CH which depends on ROW_DESC
 const ROW_CAP=1, ROW_XHGT=3, ROW_BASE=9, ROW_DESC=11;
@@ -311,14 +32,9 @@ const ALL_LTR   = ALL_CHARS; // alias used internally
 const STROKE_COLOR = '#1e1b2e';
 
 // ═══════════════════════════════════════════════════════
-// EXPERIMENTAL FEATURE FLAGS (URL parameters)
-// Usage: ?exp=grab | ?exp=modes | ?exp=smart
+// INTERACTION MODE — Smart mode with tap-to-select, dot movement, and curve bending
 // ═══════════════════════════════════════════════════════
-const EXP_FLAG = new URLSearchParams(location.search).get('exp');
-const EXP_GRAB  = EXP_FLAG === 'grab';   // Direct Grab mode
-const EXP_MODES = EXP_FLAG === 'modes';  // Toolbar Modes
-const EXP_SMART = EXP_FLAG === 'smart';  // Intelligent Context
-const EXP_ANY   = EXP_GRAB || EXP_MODES || EXP_SMART;
+const SMART_MODE = true;  // Smart interaction mode is now the default
 
 // Curve constraints
 const CURVE_MAX_DIST = SP * 1.5;  // Max control point distance from line (~60px)
@@ -456,10 +172,14 @@ let hoverDot  = null;
 let hoverSI   = -1;
 
 // Experimental mode state
-let expMode       = 'draw';        // 'draw' | 'move' | 'curve' (for toolbar modes)
 let expDragging   = null;          // { type: 'dot'|'curve', strokeIdx, endpoint?, ... }
 let expHover      = null;          // What we're hovering over for visual feedback
-let expHintsDismissed = false;     // User dismissed hints
+
+// Tap-to-select state (for ?exp=grab and ?exp=smart)
+let expSelected   = null;          // { type: 'stroke'|'dot', strokeIdx, endpoint?, x?, y? }
+let pressStart    = null;          // { x, y, time } for tap detection
+const TAP_THRESHOLD = 10;          // Max movement in pixels to count as tap
+const TAP_TIME_LIMIT = 300;        // Max time in ms to count as tap
 
 // Load / initialise
 (function init() {
@@ -507,13 +227,27 @@ function nearDot(px,py) {
 }
 function dotEq(a,b){return a&&b&&a.c===b.c&&a.r===b.r}
 function nearStroke(px,py) {
-  // Only searches active segment
+  // Only searches active segment - handles both straight and curved strokes
   const ss=getActSeg();
   for(let i=ss.length-1;i>=0;i--){
-    const s=ss[i],dx=s.x2-s.x1,dy=s.y2-s.y1,lq=dx*dx+dy*dy;
-    let t=lq>0?((px-s.x1)*dx+(py-s.y1)*dy)/lq:0;
-    t=Math.max(0,Math.min(1,t));
-    if(Math.hypot(px-(s.x1+t*dx),py-(s.y1+t*dy))<(s.w||11)/2+8) return i;
+    const s=ss[i];
+    const threshold = (s.w||11)/2 + 8;
+
+    // For curved strokes: sample points along the bezier curve
+    if (s.curved && s.cx !== undefined && s.cy !== undefined) {
+      for (let t = 0; t <= 1; t += 0.05) {
+        const mt = 1 - t;
+        const x = mt*mt*s.x1 + 2*mt*t*s.cx + t*t*s.x2;
+        const y = mt*mt*s.y1 + 2*mt*t*s.cy + t*t*s.y2;
+        if (Math.hypot(px - x, py - y) < threshold) return i;
+      }
+    } else {
+      // For straight strokes: distance to line segment
+      const dx=s.x2-s.x1, dy=s.y2-s.y1, lq=dx*dx+dy*dy;
+      let t=lq>0?((px-s.x1)*dx+(py-s.y1)*dy)/lq:0;
+      t=Math.max(0,Math.min(1,t));
+      if(Math.hypot(px-(s.x1+t*dx),py-(s.y1+t*dy))<threshold) return i;
+    }
   }
   return -1;
 }
@@ -523,7 +257,7 @@ function nearStroke(px,py) {
 // ═══════════════════════════════════════════════════════
 // Find stroke endpoint (purple dot) near cursor
 function findEndpointAt(px, py, radius = 15) {
-  if (!EXP_ANY) return null;
+  if (!SMART_MODE) return null;
   const ss = getActSeg();
   for (let i = 0; i < ss.length; i++) {
     const s = ss[i];
@@ -539,21 +273,43 @@ function findEndpointAt(px, py, radius = 15) {
   return null;
 }
 
-// Find stroke midpoint for bending (excludes endpoints)
+// Find stroke for bending - detects clicks on the stroke itself (excludes endpoints)
 function findStrokeMidAt(px, py, threshold = 12) {
-  if (!EXP_ANY) return null;
+  if (!SMART_MODE) return null;
   const ss = getActSeg();
   for (let i = ss.length - 1; i >= 0; i--) {
     const s = ss[i];
-    // Get midpoint (or control point if curved)
-    const mx = s.curved ? s.cx : (s.x1 + s.x2) / 2;
-    const my = s.curved ? s.cy : (s.y1 + s.y2) / 2;
-    // Check if near midpoint but not near endpoints
-    const distMid = Math.hypot(mx - px, my - py);
+    // Check distance from endpoints first - must not be too close
     const distStart = Math.hypot(s.x1 - px, s.y1 - py);
     const distEnd = Math.hypot(s.x2 - px, s.y2 - py);
-    if (distMid < threshold && distStart > threshold && distEnd > threshold) {
-      return { strokeIdx: i, mx, my, stroke: s };
+    if (distStart < threshold || distEnd < threshold) continue;
+
+    // For curved strokes: check if near the actual curve path
+    if (s.curved && s.cx !== undefined) {
+      // Sample points along the curve and find closest
+      let minDist = Infinity;
+      for (let t = 0.1; t <= 0.9; t += 0.1) {
+        const mt = 1 - t;
+        const x = mt*mt*s.x1 + 2*mt*t*s.cx + t*t*s.x2;
+        const y = mt*mt*s.y1 + 2*mt*t*s.cy + t*t*s.y2;
+        const d = Math.hypot(x - px, y - py);
+        if (d < minDist) minDist = d;
+      }
+      if (minDist < threshold + (s.w || 11) / 2) {
+        return { strokeIdx: i, stroke: s };
+      }
+    } else {
+      // For straight strokes: check distance to line segment
+      const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+      const lq = dx*dx + dy*dy;
+      let t = lq > 0 ? ((px - s.x1)*dx + (py - s.y1)*dy) / lq : 0;
+      t = Math.max(0.1, Math.min(0.9, t)); // Exclude endpoints
+      const closestX = s.x1 + t * dx;
+      const closestY = s.y1 + t * dy;
+      const dist = Math.hypot(px - closestX, py - closestY);
+      if (dist < threshold + (s.w || 11) / 2) {
+        return { strokeIdx: i, stroke: s };
+      }
     }
   }
   return null;
@@ -563,8 +319,9 @@ function findStrokeMidAt(px, py, threshold = 12) {
 function snapToGrid(x, y) {
   const col = Math.round((x - MX) / SP);
   const row = Math.round((y - MY) / SP);
+  // Constrain to valid dot grid: cols 0-COLS, rows 1-ROW_DESC
   const snappedCol = Math.max(0, Math.min(COLS, col));
-  const snappedRow = Math.max(0, Math.min(ROWS, row));
+  const snappedRow = Math.max(1, Math.min(ROW_DESC, row));
   return {
     x: MX + snappedCol * SP,
     y: MY + snappedRow * SP,
@@ -577,14 +334,25 @@ function snapToGrid(x, y) {
 function clampControlPoint(x1, y1, x2, y2, cx, cy) {
   const midX = (x1 + x2) / 2;
   const midY = (y1 + y2) / 2;
+
+  // First clamp to max distance from midpoint
   const dist = Math.hypot(cx - midX, cy - midY);
-  if (dist <= CURVE_MAX_DIST) return { cx, cy };
-  // Clamp to max distance
-  const scale = CURVE_MAX_DIST / dist;
-  return {
-    cx: midX + (cx - midX) * scale,
-    cy: midY + (cy - midY) * scale
-  };
+  if (dist > CURVE_MAX_DIST) {
+    const scale = CURVE_MAX_DIST / dist;
+    cx = midX + (cx - midX) * scale;
+    cy = midY + (cy - midY) * scale;
+  }
+
+  // Then clamp to grid boundaries (same as dot grid: cols 0-COLS, rows 1-ROW_DESC)
+  const minX = MX;
+  const maxX = MX + COLS * SP;
+  const minY = MY + 1 * SP;  // Row 1
+  const maxY = MY + ROW_DESC * SP;  // Row 11
+
+  cx = Math.max(minX, Math.min(maxX, cx));
+  cy = Math.max(minY, Math.min(maxY, cy));
+
+  return { cx, cy };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -615,26 +383,6 @@ function mkStroke(s, col, op) {
     // Straight line (existing behavior)
     return mkLine(s.x1, s.y1, s.x2, s.y2, color, w, opacity);
   }
-}
-
-// Draw control point for curve editing
-function mkControlPoint(cx, cy, isHover) {
-  const r = isHover ? 10 : 7;
-  const fill = isHover ? '#60a5fa' : '#3b82f6';
-  return sa(ns('circle'), {
-    cx, cy, r, fill, stroke: 'white', 'stroke-width': 2,
-    style: 'cursor:grab'
-  });
-}
-
-// Draw control point guide line (from midpoint to control point)
-function mkControlGuide(x1, y1, x2, y2, cx, cy) {
-  const midX = (x1 + x2) / 2;
-  const midY = (y1 + y2) / 2;
-  return sa(ns('line'), {
-    x1: midX, y1: midY, x2: cx, y2: cy,
-    stroke: '#93c5fd', 'stroke-width': 1.5, 'stroke-dasharray': '4 3', opacity: 0.7
-  });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -703,34 +451,32 @@ function renderCanvas() {
   const active=segs[curSeg]||[];
   active.forEach((s,i)=>{
     const eh=tool==='erase'&&i===hoverSI;
+    const isSelected = SMART_MODE && expSelected && expSelected.type === 'stroke' && expSelected.strokeIdx === i;
+    const isHovered = SMART_MODE && expHover && expHover.type === 'stroke' && expHover.strokeIdx === i && !isSelected;
+
+    // Draw hover glow behind the stroke (subtler than selection)
+    if (isHovered) {
+      const hoverGlow = mkStroke(s, '#a78bfa', 1);
+      hoverGlow.setAttribute('stroke-width', (s.w || 11) + 6);
+      hoverGlow.setAttribute('opacity', '0.5');
+      hoverGlow.setAttribute('filter', 'blur(2px)');
+      drawSVG.appendChild(hoverGlow);
+    }
+
+    // Draw selection glow behind the stroke (stronger than hover)
+    if (isSelected) {
+      const glowStroke = mkStroke(s, '#7c3aed', 1);
+      glowStroke.setAttribute('stroke-width', (s.w || 11) + 8);
+      glowStroke.setAttribute('opacity', '0.4');
+      drawSVG.appendChild(glowStroke);
+    }
+
     drawSVG.appendChild(mkStroke(s, eh?'#f87171':visCol(s.color), eh?.45:1));
   });
-
-  // ── Experimental: Control points for curved strokes ──
-  if (EXP_ANY) {
-    active.forEach((s,i)=>{
-      if (s.curved && s.cx !== undefined && s.cy !== undefined) {
-        // Draw guide line and control point
-        const isHover = expHover && expHover.type === 'curve' && expHover.strokeIdx === i;
-        drawSVG.appendChild(mkControlGuide(s.x1, s.y1, s.x2, s.y2, s.cx, s.cy));
-        drawSVG.appendChild(mkControlPoint(s.cx, s.cy, isHover));
-      }
-    });
-  }
 
   // ── Ghost drag line ──
   if(dragging&&startDot&&hoverDot&&!dotEq(startDot,hoverDot))
     drawSVG.appendChild(mkLine(startDot.x,startDot.y,hoverDot.x,hoverDot.y,STROKE_COLOR,penWidth,.42));
-
-  // ── Experimental: Ghost curve while dragging control point ──
-  if (EXP_ANY && expDragging && expDragging.type === 'curve') {
-    const s = active[expDragging.strokeIdx];
-    if (s && expDragging.cx !== undefined) {
-      // Draw preview curve
-      const previewStroke = {...s, curved: true, cx: expDragging.cx, cy: expDragging.cy};
-      drawSVG.appendChild(mkStroke(previewStroke, '#3b82f6', 0.5));
-    }
-  }
 
   // ── Endpoint dots drawn LAST so they sit on top of strokes ──
   for(const d of allDots()){
@@ -738,6 +484,18 @@ function renderCanvas() {
     if(!endpoints.has(key)) continue;
     const isStart=dotEq(d,startDot);
     const isHover=dotEq(d,hoverDot)&&tool==='draw';
+    const isSelectedDot = SMART_MODE && expSelected && expSelected.type === 'dot' &&
+      Math.abs(expSelected.x - d.x) < 1 && Math.abs(expSelected.y - d.y) < 1;
+
+    // Draw selection ring behind the dot
+    if (isSelectedDot) {
+      const ring = sa(ns('circle'), {
+        cx: d.x, cy: d.y, r: DOT_EP + 6,
+        fill: 'none', stroke: '#7c3aed', 'stroke-width': 3, opacity: 0.6
+      });
+      drawSVG.appendChild(ring);
+    }
+
     if(isStart){
       drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_EP,fill:STROKE_COLOR,stroke:'white','stroke-width':2}));
     } else if(isHover){
@@ -1070,101 +828,162 @@ function svgPt(e){
   const cy=e.clientY??(e.touches?.[0]?.clientY??0);
   return{x:(cx-r.left)*sx,y:(cy-r.top)*sy};
 }
+
+// Helper: Check if click is on a selected stroke
+function isOnSelectedStroke(px, py) {
+  if (!expSelected || expSelected.type !== 'stroke') return false;
+  const ss = getActSeg();
+  const s = ss[expSelected.strokeIdx];
+  if (!s) return false;
+  const threshold = (s.w || 11) / 2 + 12;
+  // Sample along stroke
+  if (s.curved && s.cx !== undefined) {
+    for (let t = 0; t <= 1; t += 0.05) {
+      const mt = 1 - t;
+      const x = mt*mt*s.x1 + 2*mt*t*s.cx + t*t*s.x2;
+      const y = mt*mt*s.y1 + 2*mt*t*s.cy + t*t*s.y2;
+      if (Math.hypot(px - x, py - y) < threshold) return true;
+    }
+  } else {
+    const dx = s.x2 - s.x1, dy = s.y2 - s.y1, lq = dx*dx + dy*dy;
+    let t = lq > 0 ? ((px - s.x1)*dx + (py - s.y1)*dy) / lq : 0;
+    t = Math.max(0, Math.min(1, t));
+    if (Math.hypot(px - (s.x1 + t*dx), py - (s.y1 + t*dy)) < threshold) return true;
+  }
+  return false;
+}
+
+// Helper: Check if click is on a selected dot
+function isOnSelectedDot(px, py) {
+  if (!expSelected || expSelected.type !== 'dot') return false;
+  return Math.hypot(px - expSelected.x, py - expSelected.y) < 15;
+}
+
+// Helper: Clear selection
+function clearSelection() {
+  expSelected = null;
+  renderCanvas();
+}
+
 drawSVG.addEventListener('mousedown',e=>{
   const p=svgPt(e);
 
-  // ── Experimental: Check for dot/curve interactions first ──
-  if (EXP_ANY && tool === 'draw') {
-    // Check if clicking on an endpoint dot (for moving)
-    const endpoint = findEndpointAt(p.x, p.y);
-    if (endpoint) {
+  // ── Erase mode: original behavior ──
+  if (tool === 'erase') {
+    const si = nearStroke(p.x, p.y);
+    if (si >= 0) { pushUndo(); getActSeg().splice(si, 1); hoverSI = -1; renderCanvas(); }
+    return;
+  }
+
+  // ── Draw mode ──
+  // Record press start for tap detection
+  pressStart = { x: p.x, y: p.y, time: Date.now() };
+
+  // Experimental tap-to-select mode
+  if (SMART_MODE) {
+    // If we have a selected stroke and click on it, start bending
+    if (expSelected && expSelected.type === 'stroke' && isOnSelectedStroke(p.x, p.y)) {
       pushUndo();
-      expDragging = { type: 'dot', ...endpoint, startX: endpoint.x, startY: endpoint.y };
+      const ss = getActSeg();
+      const s = ss[expSelected.strokeIdx];
+      if (s) {
+        expDragging = {
+          type: 'curve',
+          strokeIdx: expSelected.strokeIdx,
+          cx: s.curved ? s.cx : (s.x1 + s.x2) / 2,
+          cy: s.curved ? s.cy : (s.y1 + s.y2) / 2
+        };
+      }
       renderCanvas();
       return;
     }
 
-    // Check if clicking on stroke midpoint (for bending)
-    const strokeMid = findStrokeMidAt(p.x, p.y);
-    if (strokeMid) {
+    // If we have a selected dot and click on it, start moving
+    if (expSelected && expSelected.type === 'dot' && isOnSelectedDot(p.x, p.y)) {
       pushUndo();
-      const s = strokeMid.stroke;
       expDragging = {
-        type: 'curve',
-        strokeIdx: strokeMid.strokeIdx,
-        cx: s.curved ? s.cx : (s.x1 + s.x2) / 2,
-        cy: s.curved ? s.cy : (s.y1 + s.y2) / 2
+        type: 'dot',
+        strokeIdx: expSelected.strokeIdx,
+        endpoint: expSelected.endpoint,
+        startX: expSelected.x,
+        startY: expSelected.y
       };
+      drawSVG.classList.add('exp-grabbing');
       renderCanvas();
       return;
     }
   }
 
-  // ── Original behavior ──
-  if(tool==='draw'){const d=nearDot(p.x,p.y);if(d){dragging=true;startDot=d;hoverDot=d;renderCanvas();}}
-  else{const si=nearStroke(p.x,p.y);if(si>=0){pushUndo();getActSeg().splice(si,1);hoverSI=-1;renderCanvas();}}
+  // Start drawing from a dot (will determine if tap or drag on mouseup)
+  const d = nearDot(p.x, p.y);
+  if (d) {
+    dragging = true;
+    startDot = d;
+    hoverDot = d;
+    renderCanvas();
+  }
 });
 
 drawSVG.addEventListener('mousemove',e=>{
   const p=svgPt(e);
 
-  // ── Experimental: Handle dragging ──
-  if (EXP_ANY && expDragging) {
+  // ── Experimental: Handle manipulation dragging ──
+  if (SMART_MODE && expDragging) {
+    if (expDragging.type === 'curve') {
+      // Bend the stroke - control point follows mouse (clamped)
+      const ss = getActSeg();
+      const s = ss[expDragging.strokeIdx];
+      if (s) {
+        const clamped = clampControlPoint(s.x1, s.y1, s.x2, s.y2, p.x, p.y);
+        s.curved = true;
+        s.cx = clamped.cx;
+        s.cy = clamped.cy;
+        renderCanvas();
+      }
+      return;
+    }
+
     if (expDragging.type === 'dot') {
       // Move dot - snap to grid
       const snapped = snapToGrid(p.x, p.y);
       const ss = getActSeg();
       const s = ss[expDragging.strokeIdx];
       if (s) {
+        const oldX = expDragging.endpoint === 'start' ? s.x1 : s.x2;
+        const oldY = expDragging.endpoint === 'start' ? s.y1 : s.y2;
+        // Update all strokes sharing this endpoint
+        ss.forEach(stroke => {
+          if (stroke.x1 === oldX && stroke.y1 === oldY) { stroke.x1 = snapped.x; stroke.y1 = snapped.y; }
+          if (stroke.x2 === oldX && stroke.y2 === oldY) { stroke.x2 = snapped.x; stroke.y2 = snapped.y; }
+        });
+        // Update selection to track new position
+        expSelected.x = snapped.x;
+        expSelected.y = snapped.y;
+        // Update dragging reference
         if (expDragging.endpoint === 'start') {
-          // Also update any strokes that share this endpoint
-          const oldX = s.x1, oldY = s.y1;
-          ss.forEach(stroke => {
-            if (stroke.x1 === oldX && stroke.y1 === oldY) { stroke.x1 = snapped.x; stroke.y1 = snapped.y; }
-            if (stroke.x2 === oldX && stroke.y2 === oldY) { stroke.x2 = snapped.x; stroke.y2 = snapped.y; }
-          });
-        } else {
-          const oldX = s.x2, oldY = s.y2;
-          ss.forEach(stroke => {
-            if (stroke.x1 === oldX && stroke.y1 === oldY) { stroke.x1 = snapped.x; stroke.y1 = snapped.y; }
-            if (stroke.x2 === oldX && stroke.y2 === oldY) { stroke.x2 = snapped.x; stroke.y2 = snapped.y; }
-          });
+          expDragging.startX = snapped.x;
+          expDragging.startY = snapped.y;
         }
-        renderCanvas();
-      }
-      return;
-    }
-
-    if (expDragging.type === 'curve') {
-      // Move control point - clamp to max distance
-      const ss = getActSeg();
-      const s = ss[expDragging.strokeIdx];
-      if (s) {
-        const clamped = clampControlPoint(s.x1, s.y1, s.x2, s.y2, p.x, p.y);
-        expDragging.cx = clamped.cx;
-        expDragging.cy = clamped.cy;
         renderCanvas();
       }
       return;
     }
   }
 
-  // ── Experimental: Update hover state ──
-  if (EXP_ANY && tool === 'draw' && !dragging) {
+  // ── Update hover state for visual feedback ──
+  if (SMART_MODE && tool === 'draw' && !dragging && !expDragging) {
     const endpoint = findEndpointAt(p.x, p.y);
     const strokeMid = findStrokeMidAt(p.x, p.y);
 
     let newHover = null;
     if (endpoint) {
       newHover = { type: 'dot', ...endpoint };
-      drawSVG.classList.add('exp-grab');
       drawSVG.classList.remove('exp-curve');
     } else if (strokeMid) {
-      newHover = { type: 'curve', ...strokeMid };
+      newHover = { type: 'stroke', ...strokeMid };
       drawSVG.classList.add('exp-curve');
-      drawSVG.classList.remove('exp-grab');
     } else {
-      drawSVG.classList.remove('exp-grab', 'exp-curve');
+      drawSVG.classList.remove('exp-curve');
     }
 
     if (JSON.stringify(newHover) !== JSON.stringify(expHover)) {
@@ -1173,61 +992,216 @@ drawSVG.addEventListener('mousemove',e=>{
     }
   }
 
-  // ── Original behavior ──
-  if(tool==='draw'){const d=nearDot(p.x,p.y);if(!dotEq(d,hoverDot)){hoverDot=d;renderCanvas();}}
-  else{const si=nearStroke(p.x,p.y);if(si!==hoverSI){hoverSI=si;renderCanvas();}}
+  // ── Original behavior: update hover dot while drawing ──
+  if (tool === 'draw') {
+    const d = nearDot(p.x, p.y);
+    if (!dotEq(d, hoverDot)) { hoverDot = d; renderCanvas(); }
+  } else {
+    const si = nearStroke(p.x, p.y);
+    if (si !== hoverSI) { hoverSI = si; renderCanvas(); }
+  }
 });
+
 drawSVG.addEventListener('mouseup',e=>{
-  // ── Experimental: Finish dragging ──
-  if (EXP_ANY && expDragging) {
-    if (expDragging.type === 'curve') {
-      // Commit curve change
-      const ss = getActSeg();
-      const s = ss[expDragging.strokeIdx];
-      if (s) {
-        s.curved = true;
-        s.cx = expDragging.cx;
-        s.cy = expDragging.cy;
-      }
-    }
-    // Dot movement is already committed during mousemove
+  const p = svgPt(e);
+
+  // ── Experimental: Finish manipulation ──
+  if (SMART_MODE && expDragging) {
     expDragging = null;
+    expSelected = null;  // Auto-deselect after bend/move completes
     drawSVG.classList.remove('exp-grabbing');
     renderCanvas();
     return;
   }
 
-  // ── Original behavior ──
-  if(tool!=='draw'||!dragging)return;
-  dragging=false;const p=svgPt(e),d=nearDot(p.x,p.y);
-  if(d&&!dotEq(d,startDot)){
-    pushUndo();
-    if(!glyphs[curLetter])glyphs[curLetter]=[];
-    while(glyphs[curLetter].length<=curSeg)glyphs[curLetter].push([]);
-    glyphs[curLetter][curSeg].push({x1:startDot.x,y1:startDot.y,x2:d.x,y2:d.y,color:STROKE_COLOR,w:penWidth});
+  // ── Check if this was a tap (for selection) ──
+  if (SMART_MODE && tool === 'draw' && pressStart) {
+    const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
+    const duration = Date.now() - pressStart.time;
+    const wasTap = dist < TAP_THRESHOLD && duration < TAP_TIME_LIMIT;
+
+    if (wasTap) {
+      // Tap detected - select element or deselect
+      const endpoint = findEndpointAt(p.x, p.y);
+      const strokeMid = findStrokeMidAt(p.x, p.y);
+
+      if (endpoint) {
+        // Select this dot
+        expSelected = {
+          type: 'dot',
+          strokeIdx: endpoint.strokeIdx,
+          endpoint: endpoint.endpoint,
+          x: endpoint.x,
+          y: endpoint.y
+        };
+      } else if (strokeMid) {
+        // Select this stroke
+        expSelected = {
+          type: 'stroke',
+          strokeIdx: strokeMid.strokeIdx
+        };
+      } else {
+        // Tap on empty space - deselect
+        expSelected = null;
+      }
+
+      // Cancel any drawing that started
+      dragging = false;
+      startDot = null;
+      pressStart = null;
+      renderCanvas();
+      return;
+    }
   }
-  startDot=null;renderCanvas();
-});
-drawSVG.addEventListener('mouseleave',()=>{
-  hoverDot=null;hoverSI=-1;
-  if(dragging){dragging=false;startDot=null;}
-  if(expDragging){expDragging=null;}
-  expHover=null;
-  drawSVG.classList.remove('exp-grab','exp-curve','exp-grabbing');
+
+  pressStart = null;
+
+  // ── Original drawing behavior ──
+  if (tool !== 'draw' || !dragging) return;
+  dragging = false;
+  const d = nearDot(p.x, p.y);
+  if (d && !dotEq(d, startDot)) {
+    pushUndo();
+    if (!glyphs[curLetter]) glyphs[curLetter] = [];
+    while (glyphs[curLetter].length <= curSeg) glyphs[curLetter].push([]);
+    glyphs[curLetter][curSeg].push({x1:startDot.x, y1:startDot.y, x2:d.x, y2:d.y, color:STROKE_COLOR, w:penWidth});
+    // Clear selection when new stroke is drawn
+    if (SMART_MODE) expSelected = null;
+  }
+  startDot = null;
   renderCanvas();
 });
-drawSVG.addEventListener('touchstart',e=>{e.preventDefault();const p=svgPt(e.touches[0]);
-  if(tool==='draw'){const d=nearDot(p.x,p.y);if(d){dragging=true;startDot=d;hoverDot=d;renderCanvas();}}
+
+drawSVG.addEventListener('mouseleave',()=>{
+  hoverDot = null;
+  hoverSI = -1;
+  if (dragging) { dragging = false; startDot = null; }
+  if (expDragging) { expDragging = null; }
+  pressStart = null;
+  expHover = null;
+  drawSVG.classList.remove('exp-curve', 'exp-grabbing');
+  renderCanvas();
+});
+
+// Touch events - same logic as mouse
+drawSVG.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  const p = svgPt(e.touches[0]);
+
+  if (tool === 'erase') {
+    const si = nearStroke(p.x, p.y);
+    if (si >= 0) { pushUndo(); getActSeg().splice(si, 1); hoverSI = -1; renderCanvas(); }
+    return;
+  }
+
+  pressStart = { x: p.x, y: p.y, time: Date.now() };
+
+  if (SMART_MODE) {
+    if (expSelected && expSelected.type === 'stroke' && isOnSelectedStroke(p.x, p.y)) {
+      pushUndo();
+      const ss = getActSeg();
+      const s = ss[expSelected.strokeIdx];
+      if (s) {
+        expDragging = { type: 'curve', strokeIdx: expSelected.strokeIdx,
+          cx: s.curved ? s.cx : (s.x1 + s.x2) / 2, cy: s.curved ? s.cy : (s.y1 + s.y2) / 2 };
+      }
+      renderCanvas();
+      return;
+    }
+    if (expSelected && expSelected.type === 'dot' && isOnSelectedDot(p.x, p.y)) {
+      pushUndo();
+      expDragging = { type: 'dot', strokeIdx: expSelected.strokeIdx,
+        endpoint: expSelected.endpoint, startX: expSelected.x, startY: expSelected.y };
+      renderCanvas();
+      return;
+    }
+  }
+
+  const d = nearDot(p.x, p.y);
+  if (d) { dragging = true; startDot = d; hoverDot = d; renderCanvas(); }
 },{passive:false});
-drawSVG.addEventListener('touchmove',e=>{e.preventDefault();const p=svgPt(e.touches[0]);
-  const d=nearDot(p.x,p.y);if(!dotEq(d,hoverDot)){hoverDot=d;renderCanvas();}
+
+drawSVG.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  const p = svgPt(e.touches[0]);
+
+  if (SMART_MODE && expDragging) {
+    if (expDragging.type === 'curve') {
+      const ss = getActSeg();
+      const s = ss[expDragging.strokeIdx];
+      if (s) {
+        const clamped = clampControlPoint(s.x1, s.y1, s.x2, s.y2, p.x, p.y);
+        s.curved = true; s.cx = clamped.cx; s.cy = clamped.cy;
+        renderCanvas();
+      }
+      return;
+    }
+    if (expDragging.type === 'dot') {
+      const snapped = snapToGrid(p.x, p.y);
+      const ss = getActSeg();
+      const s = ss[expDragging.strokeIdx];
+      if (s) {
+        const oldX = expDragging.endpoint === 'start' ? s.x1 : s.x2;
+        const oldY = expDragging.endpoint === 'start' ? s.y1 : s.y2;
+        ss.forEach(stroke => {
+          if (stroke.x1 === oldX && stroke.y1 === oldY) { stroke.x1 = snapped.x; stroke.y1 = snapped.y; }
+          if (stroke.x2 === oldX && stroke.y2 === oldY) { stroke.x2 = snapped.x; stroke.y2 = snapped.y; }
+        });
+        expSelected.x = snapped.x; expSelected.y = snapped.y;
+        renderCanvas();
+      }
+      return;
+    }
+  }
+
+  const d = nearDot(p.x, p.y);
+  if (!dotEq(d, hoverDot)) { hoverDot = d; renderCanvas(); }
 },{passive:false});
-drawSVG.addEventListener('touchend',e=>{e.preventDefault();const p=svgPt(e.changedTouches[0]);
-  if(tool!=='draw'||!dragging)return;dragging=false;const d=nearDot(p.x,p.y);
-  if(d&&!dotEq(d,startDot)){pushUndo();if(!glyphs[curLetter])glyphs[curLetter]=[];
-    while(glyphs[curLetter].length<=curSeg)glyphs[curLetter].push([]);
-    glyphs[curLetter][curSeg].push({x1:startDot.x,y1:startDot.y,x2:d.x,y2:d.y,color:STROKE_COLOR,w:penWidth});}
-  startDot=null;renderCanvas();
+
+drawSVG.addEventListener('touchend',e=>{
+  e.preventDefault();
+  const p = svgPt(e.changedTouches[0]);
+
+  if (SMART_MODE && expDragging) {
+    expDragging = null;
+    expSelected = null;  // Auto-deselect after bend/move completes
+    renderCanvas();
+    return;
+  }
+
+  if (SMART_MODE && tool === 'draw' && pressStart) {
+    const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
+    const duration = Date.now() - pressStart.time;
+    if (dist < TAP_THRESHOLD && duration < TAP_TIME_LIMIT) {
+      const endpoint = findEndpointAt(p.x, p.y);
+      const strokeMid = findStrokeMidAt(p.x, p.y);
+      if (endpoint) {
+        expSelected = { type: 'dot', strokeIdx: endpoint.strokeIdx,
+          endpoint: endpoint.endpoint, x: endpoint.x, y: endpoint.y };
+      } else if (strokeMid) {
+        expSelected = { type: 'stroke', strokeIdx: strokeMid.strokeIdx };
+      } else {
+        expSelected = null;
+      }
+      dragging = false; startDot = null; pressStart = null;
+      renderCanvas();
+      return;
+    }
+  }
+  pressStart = null;
+
+  if (tool !== 'draw' || !dragging) return;
+  dragging = false;
+  const d = nearDot(p.x, p.y);
+  if (d && !dotEq(d, startDot)) {
+    pushUndo();
+    if (!glyphs[curLetter]) glyphs[curLetter] = [];
+    while (glyphs[curLetter].length <= curSeg) glyphs[curLetter].push([]);
+    glyphs[curLetter][curSeg].push({x1:startDot.x, y1:startDot.y, x2:d.x, y2:d.y, color:STROKE_COLOR, w:penWidth});
+    if (SMART_MODE) expSelected = null;
+  }
+  startDot = null;
+  renderCanvas();
 },{passive:false});
 
 // ═══════════════════════════════════════════════════════
@@ -1268,6 +1242,31 @@ document.getElementById('td').addEventListener('click',()=>{
   hoverSI=-1;renderCanvas();
 });
 document.getElementById('te').addEventListener('click',()=>{
+  // If something is selected in experimental mode, do one-time erase of selection
+  if (SMART_MODE && expSelected) {
+    pushUndo();
+    const ss = getActSeg();
+
+    if (expSelected.type === 'stroke') {
+      // Delete the selected stroke
+      ss.splice(expSelected.strokeIdx, 1);
+    } else if (expSelected.type === 'dot') {
+      // Delete all strokes connected to this dot
+      const dotX = expSelected.x;
+      const dotY = expSelected.y;
+      // Filter out strokes that have this endpoint
+      const remaining = ss.filter(s =>
+        !((s.x1 === dotX && s.y1 === dotY) || (s.x2 === dotX && s.y2 === dotY))
+      );
+      setActSeg(remaining);
+    }
+
+    expSelected = null;
+    renderCanvas();
+    return; // Stay in draw mode
+  }
+
+  // Normal behavior: switch to erase mode
   tool='erase';drawSVG.classList.add('erase');
   document.getElementById('te').classList.add('active');
   document.getElementById('td').classList.remove('active');
@@ -1315,6 +1314,68 @@ document.getElementById('btn-rst').addEventListener('click',()=>{
 });
 
 // ═══════════════════════════════════════════════════════
+// EXPERIMENTAL: HINT TOOLTIP (?exp=smart)
+// ═══════════════════════════════════════════════════════
+let hintEl = null;
+
+if (SMART_MODE) {
+  // Create hint element
+  hintEl = document.createElement('div');
+  hintEl.className = 'exp-hint';
+  hintEl.style.display = 'none';
+  document.body.appendChild(hintEl);
+
+  // Track mouse for hint positioning - context-aware hints
+  drawSVG.addEventListener('mousemove', e => {
+    if (!hintEl || expDragging) return;
+
+    const p = svgPt(e);
+    const endpoint = findEndpointAt(p.x, p.y);
+    const strokeMid = findStrokeMidAt(p.x, p.y);
+    const rect = drawSVG.getBoundingClientRect();
+    const scaleX = rect.width / CW;
+
+    let hintText = null;
+    let hintX = p.x;
+    let hintY = p.y;
+
+    if (endpoint) {
+      // Hovering over a dot
+      const isSelectedDot = expSelected && expSelected.type === 'dot' &&
+        Math.abs(expSelected.x - endpoint.x) < 1 && Math.abs(expSelected.y - endpoint.y) < 1;
+      hintText = isSelectedDot ? 'Drag to move' : 'Tap to select';
+      hintX = endpoint.x;
+      hintY = endpoint.y;
+    } else if (strokeMid) {
+      // Hovering over a stroke
+      const isSelectedStroke = expSelected && expSelected.type === 'stroke' &&
+        expSelected.strokeIdx === strokeMid.strokeIdx;
+      const s = strokeMid.stroke;
+      hintText = isSelectedStroke ? 'Drag to bend' : 'Tap to select';
+      hintX = s.curved ? s.cx : (s.x1 + s.x2) / 2;
+      hintY = s.curved ? s.cy : (s.y1 + s.y2) / 2;
+    }
+
+    if (hintText) {
+      hintEl.textContent = hintText;
+      hintEl.style.left = (rect.left + hintX * scaleX) + 'px';
+      hintEl.style.top = (rect.top + hintY * scaleX - 20) + 'px';
+      hintEl.style.display = 'block';
+    } else {
+      hintEl.style.display = 'none';
+    }
+  });
+
+  drawSVG.addEventListener('mouseleave', () => {
+    if (hintEl) hintEl.style.display = 'none';
+  });
+
+  drawSVG.addEventListener('mousedown', () => {
+    if (hintEl) hintEl.style.display = 'none';
+  });
+}
+
+// ═══════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════
 buildCharPicker();
@@ -1324,6 +1385,3 @@ requestAnimationFrame(() => {
 });
 
 window.addEventListener('resize', scheduleRegen);
-</script>
-</body>
-</html>
