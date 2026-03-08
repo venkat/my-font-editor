@@ -1208,14 +1208,14 @@ drawSVG.addEventListener('touchstart',e=>{
         expDragging = { type: 'curve', strokeIdx: expSelected.strokeIdx,
           cx: s.curved ? s.cx : (s.x1 + s.x2) / 2, cy: s.curved ? s.cy : (s.y1 + s.y2) / 2 };
       }
-      renderCanvas();
+      // NOTE: Do NOT call renderCanvas() here - breaks iOS touch tracking
       return;
     }
     if (expSelected && expSelected.type === 'dot' && isOnSelectedDot(p.x, p.y)) {
       pushUndo();
       expDragging = { type: 'dot', strokeIdx: expSelected.strokeIdx,
         endpoint: expSelected.endpoint, startX: expSelected.x, startY: expSelected.y };
-      renderCanvas();
+      // NOTE: Do NOT call renderCanvas() here - breaks iOS touch tracking
       return;
     }
   }
@@ -1224,7 +1224,8 @@ drawSVG.addEventListener('touchstart',e=>{
   if (d) {
     dragging = true; startDot = d; hoverDot = d;
     debugLog('Set dragging=true, startDot at ' + d.c + ',' + d.r, '#ff0');
-    renderCanvas();
+    // NOTE: Do NOT call renderCanvas() here! It rebuilds DOM and causes iOS
+    // to lose track of the touch, preventing touchend from firing.
   } else {
     debugLog('No dot found for drawing', '#888');
   }
