@@ -30,7 +30,9 @@ jobs:
       - name: Prepare deployment
         run: |
           mkdir -p _site
-          cp my-font-maker.html _site/index.html
+          cp index.html _site/
+          cp style.css _site/
+          cp app.js _site/
           cp -r *.md _site/ 2>/dev/null || true
           cp package.json _site/ 2>/dev/null || true
 
