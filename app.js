@@ -1219,6 +1219,15 @@ window.testTouch = function(action = 'tap') {
 // Add test buttons to debug panel
 debugPanel.innerHTML += '<div style="margin-top:8px"><button onclick="testTouch(\'tap\')" style="margin-right:5px">Test Tap</button><button onclick="testTouch(\'drag\')">Test Drag</button></div>';
 
+// Auto-test if URL parameter is present
+const autoTest = new URLSearchParams(location.search).get('autotest');
+if (autoTest) {
+  debugLog('AUTO-TEST: ' + autoTest + ' in 2 seconds...', '#f0f');
+  setTimeout(() => {
+    testTouch(autoTest);
+  }, 2000);
+}
+
 // Touch events - same logic as mouse
 drawSVG.addEventListener('touchstart',e=>{
   debugLog('TOUCHSTART fired!', '#0ff');
