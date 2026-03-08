@@ -93,6 +93,11 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
 .export-row{display:flex;gap:8px;flex-shrink:0;padding:0 18px 14px;align-items:center}
 .exp-lbl{font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.1em;
   color:var(--mt);white-space:nowrap}
+.font-name-input{padding:7px 12px;border-radius:10px;border:2px solid var(--br);
+  font-family:'Nunito',sans-serif;font-size:.85rem;font-weight:700;width:140px;
+  outline:none;transition:border-color .15s}
+.font-name-input:focus{border-color:var(--pu)}
+.font-name-input::placeholder{color:var(--mt);font-weight:600}
 .eb{padding:7px 13px;border-radius:10px;border:none;cursor:pointer;
   font-family:'Nunito',sans-serif;font-size:.8rem;font-weight:800;
   display:flex;align-items:center;gap:5px;transition:all .12s}
@@ -207,7 +212,8 @@ UuVvWwXxYyZz
     </div>
   </div>
   <div class="export-row">
-    <span class="exp-lbl">Export:</span>
+    <span class="exp-lbl">Font name:</span>
+    <input type="text" class="font-name-input" id="font-name" placeholder="MyFont" value="MyFont">
     <button class="eb otf"  id="btn-otf">⬇️ Download OTF</button>
     <button class="eb json" id="btn-json">{ } Save JSON</button>
     <button class="eb rst"  id="btn-rst">🔄 Reset All</button>
@@ -951,8 +957,9 @@ document.querySelectorAll('.wb').forEach(b=>{
 function save(){try{localStorage.setItem('fontMkr8',JSON.stringify(glyphs));}catch(e){}}
 
 document.getElementById('btn-json').addEventListener('click',()=>{
-  const blob=new Blob([JSON.stringify({version:7,upm:UPM,glyphs},null,2)],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='my-font.json';
+  const fontName = document.getElementById('font-name').value.trim() || 'MyFont';
+  const blob=new Blob([JSON.stringify({version:7,upm:UPM,name:fontName,glyphs},null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fontName.replace(/\s+/g,'-')+'.json';
   document.body.appendChild(a);a.click();document.body.removeChild(a);
 });
 
@@ -960,8 +967,9 @@ document.getElementById('btn-otf').addEventListener('click',()=>{
   if(typeof opentype==='undefined'){alert('opentype.js not loaded. Check internet.');return;}
   if(!ALL_LTR.some(l=>hasAnyStk(l))){alert('Draw some letters first!');return;}
   try {
-    const font = buildOTFFont('MyFont');
-    font.download('my-font.otf');
+    const fontName = document.getElementById('font-name').value.trim() || 'MyFont';
+    const font = buildOTFFont(fontName);
+    font.download(fontName.replace(/\s+/g, '-') + '.otf');
   } catch(err){console.error(err);alert('OTF error: '+err.message);}
 });
 
