@@ -49,3 +49,21 @@ No automated tests. Manual testing:
 - Vanilla JavaScript (no frameworks)
 - All code inline in HTML file
 - Uses ES6+ features (const/let, arrow functions, template literals)
+
+## Skills (Slash Commands)
+
+| Command | Description |
+|---------|-------------|
+| `/deploy` | Commit, push, and verify deployment to venkat.io/my-font-editor |
+| `/preview` | Open the live site and take a screenshot |
+| `/local` | Start local server and preview for testing |
+| `/check` | Validate HTML and check for issues |
+| `/test-letter` | Test editing a specific letter |
+| `/export-test` | Test the OTF download functionality |
+
+## Deployment
+
+- **Live URL**: https://venkat.io/my-font-editor/
+- **Hosting**: GitHub Pages via GitHub Actions
+- **Workflow**: `.github/workflows/deploy.yml`
+- Push to `main` triggers automatic deployment
