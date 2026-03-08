@@ -1145,12 +1145,33 @@ drawSVG.addEventListener('mouseleave',()=>{
   renderCanvas();
 });
 
+// DEBUG: Visual touch indicator (remove after debugging)
+let debugDot = null;
+function showDebugTouch(x, y) {
+  if (!debugDot) {
+    debugDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    debugDot.setAttribute('r', '8');
+    debugDot.setAttribute('fill', 'red');
+    debugDot.setAttribute('opacity', '0.7');
+    debugDot.style.pointerEvents = 'none';
+  }
+  debugDot.setAttribute('cx', x);
+  debugDot.setAttribute('cy', y);
+  drawSVG.appendChild(debugDot);
+  // Remove after 500ms
+  setTimeout(() => { if (debugDot.parentNode) debugDot.parentNode.removeChild(debugDot); }, 500);
+}
+
 // Touch events - same logic as mouse
 drawSVG.addEventListener('touchstart',e=>{
   e.preventDefault();
   activateTouchMode();  // Ensure touch mode is active (catches edge cases)
   lastTouchTime = Date.now();  // Guard against duplicate mouse events
   const p = svgPt(e.touches[0]);
+
+  // DEBUG: Show where touch was detected
+  showDebugTouch(p.x, p.y);
+  console.log('Touch at SVG coords:', p.x.toFixed(1), p.y.toFixed(1), 'Thresholds - snap:', getSnapTouch(), 'endpoint:', getEndpointRadius());
 
   if (tool === 'erase') {
     const si = nearStroke(p.x, p.y);
