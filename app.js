@@ -1145,33 +1145,50 @@ drawSVG.addEventListener('mouseleave',()=>{
   renderCanvas();
 });
 
-// DEBUG: Visual touch indicator (remove after debugging)
-let debugDot = null;
-function showDebugTouch(x, y) {
-  if (!debugDot) {
-    debugDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    debugDot.setAttribute('r', '8');
-    debugDot.setAttribute('fill', 'red');
-    debugDot.setAttribute('opacity', '0.7');
-    debugDot.style.pointerEvents = 'none';
-  }
-  debugDot.setAttribute('cx', x);
-  debugDot.setAttribute('cy', y);
-  drawSVG.appendChild(debugDot);
-  // Remove after 500ms
-  setTimeout(() => { if (debugDot.parentNode) debugDot.parentNode.removeChild(debugDot); }, 500);
+// ═══════════════════════════════════════════════════════
+// DEBUG PANEL - Shows touch status on phone
+// ═══════════════════════════════════════════════════════
+const debugPanel = document.createElement('div');
+debugPanel.id = 'debug-panel';
+debugPanel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.9);color:#0f0;font-family:monospace;font-size:12px;padding:10px;z-index:9999;max-height:150px;overflow-y:auto';
+debugPanel.innerHTML = '<div style="color:#ff0;margin-bottom:5px">DEBUG MODE - Tap canvas to test</div>';
+document.body.appendChild(debugPanel);
+
+let debugLines = [];
+function debugLog(msg, color = '#0f0') {
+  const time = new Date().toLocaleTimeString();
+  debugLines.unshift(`<span style="color:${color}">[${time}] ${msg}</span>`);
+  if (debugLines.length > 10) debugLines.pop();
+  debugPanel.innerHTML = '<div style="color:#ff0;margin-bottom:5px">DEBUG MODE</div>' + debugLines.join('<br>');
 }
+
+// Log initial state
+debugLog('Touch device: ' + (IS_TOUCH_DEVICE ? 'YES' : 'NO'), '#ff0');
+debugLog('touchModeActive: ' + touchModeActive, '#ff0');
+debugLog('Thresholds - endpoint:' + getEndpointRadius() + ' snap:' + getSnapTouch(), '#ff0');
 
 // Touch events - same logic as mouse
 drawSVG.addEventListener('touchstart',e=>{
-  e.preventDefault();
-  activateTouchMode();  // Ensure touch mode is active (catches edge cases)
-  lastTouchTime = Date.now();  // Guard against duplicate mouse events
-  const p = svgPt(e.touches[0]);
+  debugLog('TOUCHSTART fired!', '#0ff');
 
-  // DEBUG: Show where touch was detected
-  showDebugTouch(p.x, p.y);
-  console.log('Touch at SVG coords:', p.x.toFixed(1), p.y.toFixed(1), 'Thresholds - snap:', getSnapTouch(), 'endpoint:', getEndpointRadius());
+  e.preventDefault();
+  activateTouchMode();
+  lastTouchTime = Date.now();
+
+  const touch = e.touches[0];
+  debugLog('Raw touch: clientX=' + touch.clientX.toFixed(0) + ' clientY=' + touch.clientY.toFixed(0), '#fff');
+
+  const rect = drawSVG.getBoundingClientRect();
+  debugLog('SVG rect: left=' + rect.left.toFixed(0) + ' top=' + rect.top.toFixed(0) + ' w=' + rect.width.toFixed(0) + ' h=' + rect.height.toFixed(0), '#fff');
+
+  const p = svgPt(e.touches[0]);
+  debugLog('SVG coords: x=' + p.x.toFixed(0) + ' y=' + p.y.toFixed(0), '#0f0');
+
+  // Check what's at this position
+  const dot = nearDot(p.x, p.y);
+  const endpoint = findEndpointAt(p.x, p.y);
+  const strokeMid = findStrokeMidAt(p.x, p.y);
+  debugLog('Found: dot=' + (dot?'YES':'no') + ' endpoint=' + (endpoint?'YES':'no') + ' stroke=' + (strokeMid?'YES':'no'), endpoint||strokeMid||dot ? '#0f0' : '#f00');
 
   if (tool === 'erase') {
     const si = nearStroke(p.x, p.y);
