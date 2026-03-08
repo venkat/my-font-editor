@@ -237,7 +237,8 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
    Editor first, preview below on scroll
    ══════════════════════════════════════════════════════════ */
 
-@media (max-width: 700px) {
+/* Tablet and mobile: stack layout for easier touch interaction */
+@media (max-width: 900px) {
   html,body{overflow:auto;height:auto;min-height:100%}
 
   /* Stack vertically: editor first, then preview */
@@ -301,7 +302,17 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
   .exp-hint{display:none !important}
 }
 
-/* Extra small phones */
+/* Tablet: larger touch targets and more columns */
+@media (min-width: 600px) and (max-width: 900px) {
+  .char-grid{grid-template-columns:repeat(13,1fr)}
+  .mini-inner{height:120px}
+  #mini-letter{font-size:100px}
+  .preview-stage{min-height:300px}
+  .preview-area{min-height:280px}
+  #prev-textarea{font-size:16px}
+}
+
+/* Small phones */
 @media (max-width: 400px) {
   .char-grid{grid-template-columns:repeat(8,1fr)}
   .badge{width:32px;height:32px;font-size:1.1rem;border-radius:10px}
