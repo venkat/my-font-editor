@@ -21,18 +21,43 @@ The app generates OTF fonts using:
 
 ## Grid to Font Unit Conversion
 
-- Canvas grid: 5 cols (0-4) x 12 rows (1-11)
-- Grid spacing: 40px
-- Conversion: `toFU(x, y)` function in code
+- Canvas grid: 5 cols (0-4) × 12 rows (1-11)
+- Grid spacing: 31px
+- Margins: MX=38, MY=12
+- Conversion function: `pixelToFontUnits()` in `src/fontBuilder.js`
+
+## Source Modules
+
+| File | Purpose |
+|------|---------|
+| `src/config.js` | Font metrics constants |
+| `src/geometry.js` | Bezier curve sampling, circle rings |
+| `src/fontBuilder.js` | OTF generation, glyph building |
 
 ## Glyph Generation Process
 
-1. Get all strokes for a letter
-2. For each stroke, create a rectangle polygon
+1. Get all strokes for a letter from `glyphs[letter]`
+2. For each stroke:
+   - Straight: Create rectangle polygon
+   - Curved: Sample bezier points, create offset polygon
 3. Add circle polygons at endpoints (rounded caps)
 4. Union all polygons with polygon-clipping
 5. Convert to OpenType path commands
 6. Create Glyph object with metrics
+
+## Stroke Data Structure
+
+```javascript
+{
+  x1, y1,           // Start point (canvas pixels)
+  x2, y2,           // End point (canvas pixels)
+  color: '#1e1b2e', // Stroke color
+  w: 11,            // Stroke width in pixels
+  // Optional for curves:
+  curved: true,
+  cx, cy            // Control point
+}
+```
 
 ## Inspection Tasks
 
@@ -40,6 +65,7 @@ The app generates OTF fonts using:
 - Check polygon union produces clean outlines
 - Confirm glyph metrics are consistent
 - Test that exported OTF is valid
+- Verify curved strokes export correctly
 
 ## Common Issues
 
@@ -47,9 +73,11 @@ The app generates OTF fonts using:
 - Self-intersecting polygons
 - Missing glyphs for characters
 - Incorrect advance width
+- Curve control points out of bounds
 
 ## Tools
 
-- Read the `buildOTFFont()` and `makeGlyph()` functions
+- Read `src/fontBuilder.js` for `buildOTFFont()` and `makeGlyph()`
 - Check stroke data in localStorage (key: `fontMkr8`)
+- Run `npm test` to verify geometry utilities work
 - Analyze the polygon union logic

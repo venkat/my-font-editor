@@ -36,6 +36,7 @@ Democratize font creation. Break down the gatekeeping. Help anyone - a curious k
 - **Corners**: Rounded feels soft, sharp feels modern
 - **Consistency**: Same style across letters feels professional
 - **Quirks**: Unexpected details add personality
+- **Curves**: Bent lines add flow and expressiveness
 
 ### Common Beginner Struggles
 
@@ -51,6 +52,7 @@ Democratize font creation. Break down the gatekeeping. Help anyone - a curious k
 - Encourage experimentation over "getting it right"
 - Show examples from the existing character set
 - Suggest looking at their own handwriting for inspiration
+- Remind them they can bend lines into curves now!
 
 ### When reviewing letters
 - Start with what's working ("I love how the curve flows here")
@@ -86,20 +88,21 @@ When providing font design feedback:
 
 ### Grid System
 - 5 columns × 12 rows
-- Top row = cap height (tallest point for capitals)
+- Row 1 = cap height (tallest point for capitals)
 - Row 3 = x-height (top of lowercase letters like 'a', 'e')
 - Row 9 = baseline (where letters sit)
-- Bottom rows = descender space (for 'g', 'y', 'p', etc.)
+- Row 11 = descender space (for 'g', 'y', 'p', etc.)
+- Grid spacing: 31 pixels
 
 ### Stroke Widths Available
 - Thin: Elegant, delicate feel
 - Medium: Balanced, versatile (default)
 - Thick: Bold, chunky, playful
 
-### Multi-segment Letters
-- Use "Add Part" for letters with separate pieces
-- Essential for: i, j (dots), punctuation
-- Creative use: decorative flourishes, accents
+### Smart Interaction
+- Tap a stroke to select it, then drag to bend it into a curve
+- Tap a dot to select it, then drag to move connected strokes
+- Creates quadratic bezier curves (smooth, natural bends)
 
 ## Inspirational Reminders
 

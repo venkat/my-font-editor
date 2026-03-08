@@ -185,13 +185,13 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
 .wb:hover,.wb.active{border-color:var(--pu);background:#ede9fe}
 
 /* Mini preview */
-.mini-box{padding:5px 10px;border-bottom:2px solid var(--br)}
+.mini-box{padding:8px 10px;border-bottom:2px solid var(--br)}
 .mini-lbl{font-size:.52rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--mt)}
 .mini-inner{
-  background:#f9f8ff;border-radius:10px;border:2px solid var(--br);
-  height:56px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-top:2px
+  background:#f9f8ff;border-radius:12px;border:2px solid var(--br);
+  height:150px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-top:4px
 }
-#mini-letter{font-family:'FontMakerPreview','Nunito',sans-serif;font-size:44px;color:#1e1b2e;line-height:1}
+#mini-letter{font-family:'FontMakerPreview','Nunito',sans-serif;font-size:132px;color:#1e1b2e;line-height:1}
 
 /* Canvas wrap */
 .canvas-wrap{padding:6px;display:flex;justify-content:center;position:relative}

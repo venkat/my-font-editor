@@ -5,11 +5,11 @@
 // ═══════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════
-const COLS=4, ROWS=12, SP=40, MX=20, MY=15;
+const COLS=4, ROWS=12, SP=31, MX=38, MY=12;
 const CW = COLS*SP + MX*2;            // 200
 // Row landmarks — declared before CH which depends on ROW_DESC
 const ROW_CAP=1, ROW_XHGT=3, ROW_BASE=9, ROW_DESC=11;
-const CH = (ROW_DESC+1)*SP + MY*2;    // 520 — keeps stroke room below descender
+const CH = MY + ROW_DESC*SP + 20;     // 428 — tight fit: top margin + rows 1-11 + small bottom padding
 // Dot sizes
 const DOT_LG=Math.round(SP*0.27);     // ≈ 11px
 const DOT_SM=Math.round(SP*0.13);     // ≈ 5px
@@ -1235,8 +1235,14 @@ document.getElementById('te').addEventListener('click',()=>{
 });
 document.getElementById('tu').addEventListener('click',doUndo);
 document.getElementById('tc').addEventListener('click',()=>{
-  if(!getActStrokes().length)return;
-  if(confirm(`Clear all strokes for "${curLetter}"?`)){pushUndo();setActStrokes([]);renderCanvas();}
+  // Reset current letter to default font
+  const defaultFont = expandFont();
+  const defaultStrokes = defaultFont[curLetter] || [];
+  if(confirm(`Reset "${curLetter}" to default?`)){
+    pushUndo();
+    setActStrokes(JSON.parse(JSON.stringify(defaultStrokes)));
+    renderCanvas();
+  }
 });
 document.querySelectorAll('.wb').forEach(b=>{
   b.addEventListener('click',()=>{

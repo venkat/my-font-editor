@@ -20,12 +20,13 @@ My Font Maker is a font editor built for a 9-year-old who loved Brutalita. The t
 ## Current UI Elements
 
 - Drawing canvas with dot grid
+- Smart interaction: tap to select, drag to move/bend
 - Live font preview in textarea
 - Character picker overlay
-- Toolbar: Draw/Erase, Undo/Clear, stroke widths
+- Toolbar: Draw/Erase, Undo/Start Again, stroke widths
 - Export buttons: Download OTF, Save JSON, Reset All
 - Font name input
-- Mini letter preview
+- Mini letter preview with live font
 
 ## Evaluation Criteria
 
@@ -39,11 +40,11 @@ When reviewing UI, consider:
 ### Discoverability
 - Can users find all features without instructions?
 - Are interactive elements visually distinct?
-- Is the most important action most prominent?
+- Is tap-to-select/drag interaction discoverable?
 
 ### Feedback
 - Do actions have immediate visual response?
-- Are loading/processing states visible?
+- Does selection show clear visual state?
 - Do errors explain what went wrong simply?
 
 ### Delight
@@ -58,12 +59,13 @@ When reviewing UI, consider:
 
 ## Red Flags to Watch For
 
-- Technical jargon (OTF, JSON, etc. need friendly labels)
+- Technical jargon (OTF, JSON need friendly labels)
 - Too many options visible at once
 - Small click targets
 - Actions that can't be undone
 - Confusing icons without labels
 - Hidden features that users need
+- No visual feedback for selections
 
 ## Suggestions Format
 

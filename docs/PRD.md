@@ -26,22 +26,51 @@ Democratize font creation by making it accessible, fun, and approachable for eve
 
 | Component | Technology |
 |-----------|------------|
-| Frontend | Vanilla HTML/CSS/JavaScript |
+| Frontend | Vanilla HTML/CSS/JavaScript (ES Modules) |
+| Build Tool | Vite |
+| Testing | Vitest |
 | Font Generation | opentype.js |
 | Shape Union | polygon-clipping |
+| CI/CD | GitHub Actions |
 | Hosting | GitHub Pages |
 | Font Preview | FontFace API |
 
 ### File Structure
 
 ```
-/
-├── index.html      # Main application shell
-├── style.css       # All styles
-├── app.js          # Application logic
+font-maker/
+├── index.html              # Main HTML file
+├── style.css               # Application styles
+├── app.js                  # Main application logic
+├── package.json            # Dependencies and scripts
+├── vite.config.js          # Build configuration
+│
+├── src/                    # Modular source code
+│   ├── config.js           # Constants and configuration
+│   ├── geometry.js         # Pure geometry utilities
+│   ├── defaultFont.js      # Default font data
+│   └── fontBuilder.js      # OTF generation utilities
+│
+├── tests/                  # Unit tests
+│   ├── geometry.test.js    # Geometry function tests
+│   └── defaultFont.test.js # Font data tests
+│
+├── .github/workflows/      # CI/CD
+│   ├── ci.yml              # Tests on push/PR
+│   └── deploy.yml          # Deploy to GitHub Pages
+│
 └── docs/
-    └── PRD.md      # This document
+    └── PRD.md              # This document
 ```
+
+### Source Modules
+
+| Module | Purpose | Testable |
+|--------|---------|----------|
+| `config.js` | Grid dimensions, colors, font metrics, character sets | N/A (constants) |
+| `geometry.js` | Distance, snapping, bezier curves, hit detection | Yes (24 tests) |
+| `defaultFont.js` | Default font data, expansion functions | Yes (12 tests) |
+| `fontBuilder.js` | OTF generation, glyph building | Partial |
 
 ---
 
@@ -83,7 +112,7 @@ The application uses a two-column layout:
 
 2. **Toolbar**
    - Draw/Erase toggle buttons
-   - Undo/Clear buttons
+   - Undo/Start Again buttons
    - Stroke width selector (3 options: thin, medium, thick)
 
 3. **Mini Preview**
@@ -105,11 +134,11 @@ The application uses a two-column layout:
 |----------|-------|-------------|
 | COLS | 4 | Number of horizontal grid divisions |
 | ROWS | 12 | Number of vertical grid divisions |
-| SP (Spacing) | 40px | Distance between grid points |
-| MX (Margin X) | 20px | Horizontal margin |
-| MY (Margin Y) | 15px | Vertical margin |
+| SP (Spacing) | 31px | Distance between grid points |
+| MX (Margin X) | 38px | Horizontal margin |
+| MY (Margin Y) | 12px | Vertical margin |
 | Canvas Width | 200px | COLS × SP + MX × 2 |
-| Canvas Height | 510px | (ROW_DESC+1) × SP + MY × 2 |
+| Canvas Height | 373px | MY + ROW_DESC × SP + 20 |
 
 ### Typography Landmarks
 
@@ -332,7 +361,8 @@ Uses opentype.js to generate OpenType font files.
 
 - Pre-populated with Brutalita-style geometric monospace glyphs
 - All 95 characters have default strokes
-- Reset All button restores defaults
+- Start Again button resets current letter to default
+- Reset All button restores all letters to defaults
 
 ---
 
@@ -400,6 +430,63 @@ Required APIs:
 
 ---
 
+## Development
+
+### Prerequisites
+
+- Node.js 18+
+- npm
+
+### Setup
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd font-maker
+
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+```
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start dev server at http://localhost:5173 |
+| `npm run build` | Build for production |
+| `npm run preview` | Preview production build |
+| `npm test` | Run unit tests |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run test:coverage` | Run tests with coverage |
+
+### CI/CD Pipeline
+
+**On Push/PR to `main`:**
+1. Install dependencies
+2. Run unit tests
+3. Build production bundle
+
+**On Push to `main` (deployment):**
+1. Run tests (blocks if failing)
+2. Build with Vite
+3. Deploy `dist/` to GitHub Pages
+
+### Unit Tests
+
+Tests cover pure utility functions using Vitest:
+
+| Test File | Module | Tests |
+|-----------|--------|-------|
+| `geometry.test.js` | `src/geometry.js` | 24 tests |
+| `defaultFont.test.js` | `src/defaultFont.js` | 12 tests |
+
+**Total: 36 passing tests**
+
+---
+
 ## Testing Checklist
 
 ### Drawing
@@ -446,7 +533,15 @@ Required APIs:
 
 ### Persistence
 - [ ] Changes persist after page reload
-- [ ] Reset All restores defaults
+- [ ] Start Again resets current letter to default
+- [ ] Reset All restores all letters to defaults
+
+### Development & CI
+- [ ] `npm test` runs all unit tests successfully
+- [ ] `npm run build` produces working production bundle
+- [ ] `npm run dev` starts development server
+- [ ] GitHub Actions CI passes on push/PR
+- [ ] GitHub Actions deploys to Pages on push to main
 
 ---
 

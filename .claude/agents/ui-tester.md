@@ -26,7 +26,7 @@ You are a UI testing agent for the My Font Maker application. Your job is to int
 - Draw mode: `#td`
 - Erase mode: `#te`
 - Undo button: `#tu`
-- Clear button: `#tc`
+- Start Again button: `#tc`
 - Edit letter button: `#char-pick-btn`
 - Character overlay: `#char-overlay`
 - Close character picker: `#char-close`
@@ -37,7 +37,7 @@ You are a UI testing agent for the My Font Maker application. Your job is to int
 ## URLs
 
 - Live: https://venkat.io/my-font-editor/
-- Local: http://localhost:3456/my-font-maker.html
+- Local dev: http://localhost:5173
 
 ## Testing Workflow
 
@@ -46,3 +46,10 @@ You are a UI testing agent for the My Font Maker application. Your job is to int
 3. Perform the requested interactions
 4. Take screenshots after each significant action
 5. Report any issues found
+
+## Before Testing Locally
+
+Ensure the dev server is running:
+```bash
+npm run dev
+```
