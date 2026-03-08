@@ -86,6 +86,7 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
   background:linear-gradient(135deg,var(--pu),var(--pk));
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text
 }
+.tagline{font-size:.75rem;font-weight:700;color:var(--mt)}
 .preview-stage{flex:1;display:flex;overflow:hidden;padding:14px 14px 0}
 .preview-area{
   flex:1;position:relative;border-radius:16px;overflow:hidden;
@@ -229,4 +230,85 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
 .exp-hint::after{
   content:'';position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);
   border:6px solid transparent;border-top-color:rgba(30,27,46,.9)
+}
+
+/* ══════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — iPhone and small screens
+   Editor first, preview below on scroll
+   ══════════════════════════════════════════════════════════ */
+
+@media (max-width: 700px) {
+  html,body{overflow:auto;height:auto;min-height:100%}
+
+  /* Stack vertically: editor first, then preview */
+  .shell{
+    display:flex;flex-direction:column;height:auto;min-height:100vh;overflow:visible
+  }
+
+  /* Editor panel comes first (order: -1) and takes full width */
+  .right{
+    order:-1;width:100%;border-left:none;border-bottom:2px solid var(--br);
+    overflow:visible
+  }
+  .right-hdr{position:relative;padding:10px 12px}
+  .badge{width:36px;height:36px;font-size:1.3rem}
+  .hdr-txt{font-size:.65rem}
+  .hdr-txt strong{font-size:.8rem}
+  .char-pick-btn{padding:4px 8px;font-size:.65rem}
+  .char-pick-btn .pick-lbl{font-size:.8rem}
+
+  /* Toolbar: wrap nicely, bigger touch targets */
+  .toolbar{padding:8px;gap:6px}
+  .tb{padding:8px 10px;font-size:.85rem}
+  .tb .l{font-size:.6rem}
+  .wb{width:36px;height:32px}
+
+  /* Mini preview: smaller on mobile */
+  .mini-box{padding:8px 12px}
+  .mini-inner{height:100px}
+  #mini-letter{font-size:80px}
+
+  /* Canvas: center and allow slight overflow */
+  .canvas-wrap{padding:8px;overflow-x:auto}
+  #draw-svg{max-width:100%;height:auto}
+
+  /* Preview area comes second */
+  .center{width:100%;flex:none;min-height:300px}
+  .center-hdr{padding:10px 12px;flex-wrap:wrap;gap:6px}
+  .tagline{display:none}
+  .app-title{font-size:1rem}
+
+  .preview-stage{padding:10px;min-height:250px}
+  .preview-area{min-height:220px}
+  #prev-textarea{font-size:14px;padding:14px;line-height:1.6em}
+
+  /* Export row: stack on mobile */
+  .export-row{
+    flex-wrap:wrap;padding:10px 12px;gap:6px;justify-content:center
+  }
+  .font-name-input{width:100%;order:-1}
+  .eb{flex:1;min-width:80px;justify-content:center;padding:10px 8px;font-size:.75rem}
+  .eb.rst{margin-left:0}
+  .exp-lbl{width:100%;text-align:center}
+
+  /* Character picker: fewer columns on mobile */
+  .char-panel{padding:16px;width:95vw;max-height:90vh;overflow-y:auto}
+  .char-grid{grid-template-columns:repeat(10,1fr);gap:3px}
+  .cbtn{font-size:.85rem;border-radius:6px}
+  .char-close{width:32px;height:32px;font-size:1.1rem}
+
+  /* Hide hover tooltip on touch devices */
+  .exp-hint{display:none !important}
+}
+
+/* Extra small phones */
+@media (max-width: 400px) {
+  .char-grid{grid-template-columns:repeat(8,1fr)}
+  .badge{width:32px;height:32px;font-size:1.1rem;border-radius:10px}
+  .toolbar{gap:4px}
+  .tg{padding:1px;gap:1px}
+  .tb{padding:6px 8px;font-size:.8rem}
+  .wb{width:32px;height:28px}
+  .mini-inner{height:80px}
+  #mini-letter{font-size:60px}
 }
