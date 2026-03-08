@@ -246,6 +246,9 @@ let hoverSI   = -1;
 let expDragging   = null;          // { type: 'dot'|'curve', strokeIdx, endpoint?, ... }
 let expHover      = null;          // What we're hovering over for visual feedback
 
+// Preview line element for touch drag feedback (avoids DOM rebuild during touch)
+let previewLine   = null;
+
 // Tap-to-select state (smart interaction mode)
 let expSelected   = null;          // { type: 'stroke'|'dot', strokeIdx, endpoint?, x?, y? }
 let pressStart    = null;          // { x, y, time } for tap detection
@@ -471,6 +474,15 @@ function mkStroke(s, col, op) {
 const drawSVG=document.getElementById('draw-svg');
 sa(drawSVG,{width:CW,height:CH,viewBox:`0 0 ${CW} ${CH}`});
 
+// Create persistent preview line for touch drag feedback
+// This element is updated directly during touchmove to avoid DOM rebuild
+previewLine = ns('line');
+sa(previewLine, {
+  'stroke': STROKE_COLOR, 'stroke-width': 11, 'stroke-linecap': 'round',
+  'opacity': 0.42, 'display': 'none', 'pointer-events': 'none'
+});
+drawSVG.appendChild(previewLine);
+
 // ═══════════════════════════════════════════════════════
 // RENDER MAIN CANVAS
 // ═══════════════════════════════════════════════════════
@@ -577,6 +589,12 @@ function renderCanvas() {
       drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_EP_VIS,fill:'#4c1d95',stroke:'white','stroke-width':1.5}));
     }
   }
+  // Re-append preview line (innerHTML='' removes it, but we need it for touch drag feedback)
+  if (previewLine) {
+    previewLine.setAttribute('display', 'none');  // Hidden until touchmove updates it
+    drawSVG.appendChild(previewLine);
+  }
+
   renderMini(); renderBig(); updateLeft(); save();
 }
 
@@ -1258,6 +1276,22 @@ drawSVG.addEventListener('touchmove',e=>{
     // Only render on mouse, not touch - touch devices don't need hover preview
     if (!touchModeActive) renderCanvas();
   }
+
+  // Update preview line directly for touch drag feedback (no DOM rebuild!)
+  if (dragging && startDot && previewLine) {
+    const endX = d ? d.x : p.x;
+    const endY = d ? d.y : p.y;
+    if (startDot.x !== endX || startDot.y !== endY) {
+      sa(previewLine, {
+        x1: startDot.x, y1: startDot.y,
+        x2: endX, y2: endY,
+        'stroke-width': penWidth,
+        'display': 'block'
+      });
+    } else {
+      previewLine.setAttribute('display', 'none');
+    }
+  }
 },{passive:false});
 
 // Handle touch cancel - iOS may cancel touches
@@ -1267,6 +1301,7 @@ drawSVG.addEventListener('touchcancel',e=>{
   startDot = null;
   pressStart = null;
   expDragging = null;
+  if (previewLine) previewLine.setAttribute('display', 'none');
 },{passive:false});
 
 drawSVG.addEventListener('touchend',e=>{
@@ -1315,11 +1350,13 @@ drawSVG.addEventListener('touchend',e=>{
 
   if (tool !== 'draw' || !dragging) return;
   dragging = false;
+  if (previewLine) previewLine.setAttribute('display', 'none');  // Hide preview before final render
   const d = nearDot(p.x, p.y);
   if (d && !dotEq(d, startDot)) {
     pushUndo();
     if (!glyphs[curLetter]) glyphs[curLetter] = [];
     glyphs[curLetter].push({x1:startDot.x, y1:startDot.y, x2:d.x, y2:d.y, color:STROKE_COLOR, w:penWidth});
+    dbg('[TOUCHEND] Line created', { from: `${startDot.c},${startDot.r}`, to: `${d.c},${d.r}` });
     if (SMART_MODE) expSelected = null;
   }
   startDot = null;
