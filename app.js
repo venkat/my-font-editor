@@ -219,7 +219,7 @@ let hoverSI   = -1;
 let expDragging   = null;          // { type: 'dot'|'curve', strokeIdx, endpoint?, ... }
 let expHover      = null;          // What we're hovering over for visual feedback
 
-// Tap-to-select state (for ?exp=grab and ?exp=smart)
+// Tap-to-select state (smart interaction mode)
 let expSelected   = null;          // { type: 'stroke'|'dot', strokeIdx, endpoint?, x?, y? }
 let pressStart    = null;          // { x, y, time } for tap detection
 // TAP_THRESH defined above with adaptive thresholds (10px desktop, 18px touch)
@@ -1358,7 +1358,7 @@ document.getElementById('btn-rst').addEventListener('click',()=>{
 });
 
 // ═══════════════════════════════════════════════════════
-// EXPERIMENTAL: HINT TOOLTIP (?exp=smart)
+// HINT TOOLTIP (smart interaction mode)
 // ═══════════════════════════════════════════════════════
 let hintEl = null;
 
