@@ -1170,6 +1170,7 @@ debugLog('Thresholds - endpoint:' + getEndpointRadius() + ' snap:' + getSnapTouc
 // Touch events - same logic as mouse
 drawSVG.addEventListener('touchstart',e=>{
   debugLog('TOUCHSTART fired!', '#0ff');
+  touchMoveCount = 0;  // Reset move counter
 
   e.preventDefault();
   activateTouchMode();
@@ -1229,9 +1230,13 @@ drawSVG.addEventListener('touchstart',e=>{
   }
 },{passive:false});
 
+// Track touch moves for debugging
+let touchMoveCount = 0;
+
 drawSVG.addEventListener('touchmove',e=>{
   e.preventDefault();
-  lastTouchTime = Date.now();  // Guard against duplicate mouse events
+  touchMoveCount++;
+  lastTouchTime = Date.now();
   const p = svgPt(e.touches[0]);
 
   if (SMART_MODE && expDragging) {
@@ -1267,9 +1272,19 @@ drawSVG.addEventListener('touchmove',e=>{
   if (!dotEq(d, hoverDot)) { hoverDot = d; renderCanvas(); }
 },{passive:false});
 
+// CRITICAL: Handle touch cancel - iOS may cancel touches
+drawSVG.addEventListener('touchcancel',e=>{
+  debugLog('TOUCHCANCEL! iOS canceled the touch', '#f00');
+  dragging = false;
+  startDot = null;
+  pressStart = null;
+  expDragging = null;
+},{passive:false});
+
 drawSVG.addEventListener('touchend',e=>{
   e.preventDefault();
-  debugLog('TOUCHEND fired!', '#f0f');
+  debugLog('TOUCHEND fired! (moves=' + touchMoveCount + ')', '#f0f');
+  touchMoveCount = 0; // Reset for next touch
   lastTouchTime = Date.now();
   const p = svgPt(e.changedTouches[0]);
 
