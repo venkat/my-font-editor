@@ -167,6 +167,23 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
 #draw-svg{border-radius:10px;background:white;box-shadow:0 3px 18px rgba(0,0,0,.1);
   cursor:crosshair;touch-action:none;display:block}
 #draw-svg.erase{cursor:cell}
+/* Experimental: cursor states */
+#draw-svg.exp-grab{cursor:grab}
+#draw-svg.exp-grabbing{cursor:grabbing}
+#draw-svg.exp-curve{cursor:crosshair}
+/* Experimental: hint tooltip */
+.exp-hint{position:fixed;background:rgba(30,27,46,.9);color:white;padding:6px 12px;
+  border-radius:8px;font-size:.75rem;font-weight:700;pointer-events:none;z-index:200;
+  transform:translate(-50%,-100%);margin-top:-12px;white-space:nowrap;
+  box-shadow:0 4px 12px rgba(0,0,0,.25)}
+.exp-hint::after{content:'';position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);
+  border:6px solid transparent;border-top-color:rgba(30,27,46,.9)}
+.exp-hint-dismiss{position:absolute;top:-6px;right:-6px;width:18px;height:18px;
+  background:#ef4444;border-radius:50%;color:white;font-size:10px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;border:2px solid white}
+/* Experimental: toolbar mode buttons */
+.tb.exp-move{background:#eff6ff;color:var(--bl)}
+.tb.exp-curve{background:#fef3c7;color:#d97706}
 </style>
 </head>
 <body>
@@ -292,6 +309,19 @@ const SYMBOLS = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~\u00b4'.split('');
 const ALL_CHARS = [...UPPER,...LOWER,...DIGITS,...SYMBOLS];
 const ALL_LTR   = ALL_CHARS; // alias used internally
 const STROKE_COLOR = '#1e1b2e';
+
+// ═══════════════════════════════════════════════════════
+// EXPERIMENTAL FEATURE FLAGS (URL parameters)
+// Usage: ?exp=grab | ?exp=modes | ?exp=smart
+// ═══════════════════════════════════════════════════════
+const EXP_FLAG = new URLSearchParams(location.search).get('exp');
+const EXP_GRAB  = EXP_FLAG === 'grab';   // Direct Grab mode
+const EXP_MODES = EXP_FLAG === 'modes';  // Toolbar Modes
+const EXP_SMART = EXP_FLAG === 'smart';  // Intelligent Context
+const EXP_ANY   = EXP_GRAB || EXP_MODES || EXP_SMART;
+
+// Curve constraints
+const CURVE_MAX_DIST = SP * 1.5;  // Max control point distance from line (~60px)
 
 // ═══════════════════════════════════════════════════════
 // DEFAULT FONT — faithful conversion from Brutalita source
@@ -425,6 +455,12 @@ let startDot  = null;
 let hoverDot  = null;
 let hoverSI   = -1;
 
+// Experimental mode state
+let expMode       = 'draw';        // 'draw' | 'move' | 'curve' (for toolbar modes)
+let expDragging   = null;          // { type: 'dot'|'curve', strokeIdx, endpoint?, ... }
+let expHover      = null;          // What we're hovering over for visual feedback
+let expHintsDismissed = false;     // User dismissed hints
+
 // Load / initialise
 (function init() {
   try {
@@ -483,6 +519,75 @@ function nearStroke(px,py) {
 }
 
 // ═══════════════════════════════════════════════════════
+// EXPERIMENTAL: HIT DETECTION FOR DOT MOVEMENT & CURVES
+// ═══════════════════════════════════════════════════════
+// Find stroke endpoint (purple dot) near cursor
+function findEndpointAt(px, py, radius = 15) {
+  if (!EXP_ANY) return null;
+  const ss = getActSeg();
+  for (let i = 0; i < ss.length; i++) {
+    const s = ss[i];
+    // Check start point
+    if (Math.hypot(s.x1 - px, s.y1 - py) < radius) {
+      return { strokeIdx: i, endpoint: 'start', x: s.x1, y: s.y1 };
+    }
+    // Check end point
+    if (Math.hypot(s.x2 - px, s.y2 - py) < radius) {
+      return { strokeIdx: i, endpoint: 'end', x: s.x2, y: s.y2 };
+    }
+  }
+  return null;
+}
+
+// Find stroke midpoint for bending (excludes endpoints)
+function findStrokeMidAt(px, py, threshold = 12) {
+  if (!EXP_ANY) return null;
+  const ss = getActSeg();
+  for (let i = ss.length - 1; i >= 0; i--) {
+    const s = ss[i];
+    // Get midpoint (or control point if curved)
+    const mx = s.curved ? s.cx : (s.x1 + s.x2) / 2;
+    const my = s.curved ? s.cy : (s.y1 + s.y2) / 2;
+    // Check if near midpoint but not near endpoints
+    const distMid = Math.hypot(mx - px, my - py);
+    const distStart = Math.hypot(s.x1 - px, s.y1 - py);
+    const distEnd = Math.hypot(s.x2 - px, s.y2 - py);
+    if (distMid < threshold && distStart > threshold && distEnd > threshold) {
+      return { strokeIdx: i, mx, my, stroke: s };
+    }
+  }
+  return null;
+}
+
+// Snap coordinates to nearest grid intersection
+function snapToGrid(x, y) {
+  const col = Math.round((x - MX) / SP);
+  const row = Math.round((y - MY) / SP);
+  const snappedCol = Math.max(0, Math.min(COLS, col));
+  const snappedRow = Math.max(0, Math.min(ROWS, row));
+  return {
+    x: MX + snappedCol * SP,
+    y: MY + snappedRow * SP,
+    c: snappedCol,
+    r: snappedRow
+  };
+}
+
+// Clamp control point distance from line midpoint
+function clampControlPoint(x1, y1, x2, y2, cx, cy) {
+  const midX = (x1 + x2) / 2;
+  const midY = (y1 + y2) / 2;
+  const dist = Math.hypot(cx - midX, cy - midY);
+  if (dist <= CURVE_MAX_DIST) return { cx, cy };
+  // Clamp to max distance
+  const scale = CURVE_MAX_DIST / dist;
+  return {
+    cx: midX + (cx - midX) * scale,
+    cy: midY + (cy - midY) * scale
+  };
+}
+
+// ═══════════════════════════════════════════════════════
 // SVG UTILS
 // ═══════════════════════════════════════════════════════
 const SVG_NS='http://www.w3.org/2000/svg';
@@ -490,6 +595,46 @@ const ns  = t => document.createElementNS(SVG_NS,t);
 const sa  = (e,o)=>{ for(const[k,v] of Object.entries(o)) e.setAttribute(k,v); return e; };
 function mkLine(x1,y1,x2,y2,col,w,op){
   return sa(ns('line'),{x1,y1,x2,y2,stroke:col,'stroke-width':w,'stroke-linecap':'round',opacity:op||1});
+}
+
+// Draw stroke - supports both straight lines and quadratic bezier curves
+function mkStroke(s, col, op) {
+  const w = s.w || 11;
+  const color = col || s.color || STROKE_COLOR;
+  const opacity = op || 1;
+
+  if (s.curved && s.cx !== undefined && s.cy !== undefined) {
+    // Quadratic bezier curve
+    const path = ns('path');
+    const d = `M ${s.x1} ${s.y1} Q ${s.cx} ${s.cy} ${s.x2} ${s.y2}`;
+    return sa(path, {
+      d, stroke: color, 'stroke-width': w, 'stroke-linecap': 'round',
+      fill: 'none', opacity
+    });
+  } else {
+    // Straight line (existing behavior)
+    return mkLine(s.x1, s.y1, s.x2, s.y2, color, w, opacity);
+  }
+}
+
+// Draw control point for curve editing
+function mkControlPoint(cx, cy, isHover) {
+  const r = isHover ? 10 : 7;
+  const fill = isHover ? '#60a5fa' : '#3b82f6';
+  return sa(ns('circle'), {
+    cx, cy, r, fill, stroke: 'white', 'stroke-width': 2,
+    style: 'cursor:grab'
+  });
+}
+
+// Draw control point guide line (from midpoint to control point)
+function mkControlGuide(x1, y1, x2, y2, cx, cy) {
+  const midX = (x1 + x2) / 2;
+  const midY = (y1 + y2) / 2;
+  return sa(ns('line'), {
+    x1: midX, y1: midY, x2: cx, y2: cy,
+    stroke: '#93c5fd', 'stroke-width': 1.5, 'stroke-dasharray': '4 3', opacity: 0.7
+  });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -553,17 +698,39 @@ function renderCanvas() {
 
   segs.forEach((seg,si)=>{
     if(si===curSeg) return;
-    for(const s of seg) drawSVG.appendChild(mkLine(s.x1,s.y1,s.x2,s.y2,visCol(s.color),s.w||11,0.2));
+    for(const s of seg) drawSVG.appendChild(mkStroke(s, visCol(s.color), 0.2));
   });
   const active=segs[curSeg]||[];
   active.forEach((s,i)=>{
     const eh=tool==='erase'&&i===hoverSI;
-    drawSVG.appendChild(mkLine(s.x1,s.y1,s.x2,s.y2,eh?'#f87171':visCol(s.color),s.w||11,eh?.45:1));
+    drawSVG.appendChild(mkStroke(s, eh?'#f87171':visCol(s.color), eh?.45:1));
   });
+
+  // ── Experimental: Control points for curved strokes ──
+  if (EXP_ANY) {
+    active.forEach((s,i)=>{
+      if (s.curved && s.cx !== undefined && s.cy !== undefined) {
+        // Draw guide line and control point
+        const isHover = expHover && expHover.type === 'curve' && expHover.strokeIdx === i;
+        drawSVG.appendChild(mkControlGuide(s.x1, s.y1, s.x2, s.y2, s.cx, s.cy));
+        drawSVG.appendChild(mkControlPoint(s.cx, s.cy, isHover));
+      }
+    });
+  }
 
   // ── Ghost drag line ──
   if(dragging&&startDot&&hoverDot&&!dotEq(startDot,hoverDot))
     drawSVG.appendChild(mkLine(startDot.x,startDot.y,hoverDot.x,hoverDot.y,STROKE_COLOR,penWidth,.42));
+
+  // ── Experimental: Ghost curve while dragging control point ──
+  if (EXP_ANY && expDragging && expDragging.type === 'curve') {
+    const s = active[expDragging.strokeIdx];
+    if (s && expDragging.cx !== undefined) {
+      // Draw preview curve
+      const previewStroke = {...s, curved: true, cx: expDragging.cx, cy: expDragging.cy};
+      drawSVG.appendChild(mkStroke(previewStroke, '#3b82f6', 0.5));
+    }
+  }
 
   // ── Endpoint dots drawn LAST so they sit on top of strokes ──
   for(const d of allDots()){
@@ -629,6 +796,54 @@ function buildOTFFont(familyName) {
     return ring;
   }
 
+  // Sample points along a quadratic bezier curve
+  function sampleQuadBezier(x1, y1, cx, cy, x2, y2, numSamples = 12) {
+    const points = [];
+    for (let i = 0; i <= numSamples; i++) {
+      const t = i / numSamples;
+      const mt = 1 - t;
+      // Quadratic bezier formula: B(t) = (1-t)²P0 + 2(1-t)tP1 + t²P2
+      const x = mt * mt * x1 + 2 * mt * t * cx + t * t * x2;
+      const y = mt * mt * y1 + 2 * mt * t * cy + t * t * y2;
+      points.push([x, y]);
+    }
+    return points;
+  }
+
+  // Create offset polygon for a curved stroke
+  function curvedStrokeRing(x1, y1, cx, cy, x2, y2, hw) {
+    const samples = sampleQuadBezier(x1, y1, cx, cy, x2, y2, 16);
+    const leftSide = [];
+    const rightSide = [];
+
+    for (let i = 0; i < samples.length; i++) {
+      const [px, py] = samples[i];
+      // Calculate tangent direction
+      let dx, dy;
+      if (i === 0) {
+        dx = samples[1][0] - samples[0][0];
+        dy = samples[1][1] - samples[0][1];
+      } else if (i === samples.length - 1) {
+        dx = samples[i][0] - samples[i-1][0];
+        dy = samples[i][1] - samples[i-1][1];
+      } else {
+        dx = samples[i+1][0] - samples[i-1][0];
+        dy = samples[i+1][1] - samples[i-1][1];
+      }
+      const len = Math.sqrt(dx*dx + dy*dy);
+      if (len < 0.001) continue;
+      const nx = -dy/len * hw;
+      const ny = dx/len * hw;
+      leftSide.push([px - nx, py - ny]);
+      rightSide.push([px + nx, py + ny]);
+    }
+
+    // Create closed polygon: left side forward, right side backward
+    const ring = [...leftSide, ...rightSide.reverse()];
+    ring.push(ring[0]); // close
+    return ring;
+  }
+
   function makeGlyph(l, uni) {
     const stks = allStk(l);
     if (!stks.length) {
@@ -649,6 +864,13 @@ function buildOTFFont(familyName) {
       const k2 = `${Math.round(x2)},${Math.round(y2)}`;
       if (!endpoints.has(k1)) endpoints.set(k1, [x1, y1, hw]);
       if (!endpoints.has(k2)) endpoints.set(k2, [x2, y2, hw]);
+
+      // Check if this is a curved stroke
+      if (s.curved && s.cx !== undefined && s.cy !== undefined) {
+        const [cx, cy] = toFU(s.cx, s.cy);
+        rings.push(curvedStrokeRing(x1, y1, cx, cy, x2, y2, hw));
+        continue;
+      }
 
       const dx = x2-x1, dy = y2-y1, len = Math.sqrt(dx*dx + dy*dy);
       if (len < 0.5) continue; // zero-length dot: circle handled below
@@ -850,15 +1072,132 @@ function svgPt(e){
 }
 drawSVG.addEventListener('mousedown',e=>{
   const p=svgPt(e);
+
+  // ── Experimental: Check for dot/curve interactions first ──
+  if (EXP_ANY && tool === 'draw') {
+    // Check if clicking on an endpoint dot (for moving)
+    const endpoint = findEndpointAt(p.x, p.y);
+    if (endpoint) {
+      pushUndo();
+      expDragging = { type: 'dot', ...endpoint, startX: endpoint.x, startY: endpoint.y };
+      renderCanvas();
+      return;
+    }
+
+    // Check if clicking on stroke midpoint (for bending)
+    const strokeMid = findStrokeMidAt(p.x, p.y);
+    if (strokeMid) {
+      pushUndo();
+      const s = strokeMid.stroke;
+      expDragging = {
+        type: 'curve',
+        strokeIdx: strokeMid.strokeIdx,
+        cx: s.curved ? s.cx : (s.x1 + s.x2) / 2,
+        cy: s.curved ? s.cy : (s.y1 + s.y2) / 2
+      };
+      renderCanvas();
+      return;
+    }
+  }
+
+  // ── Original behavior ──
   if(tool==='draw'){const d=nearDot(p.x,p.y);if(d){dragging=true;startDot=d;hoverDot=d;renderCanvas();}}
   else{const si=nearStroke(p.x,p.y);if(si>=0){pushUndo();getActSeg().splice(si,1);hoverSI=-1;renderCanvas();}}
 });
+
 drawSVG.addEventListener('mousemove',e=>{
   const p=svgPt(e);
+
+  // ── Experimental: Handle dragging ──
+  if (EXP_ANY && expDragging) {
+    if (expDragging.type === 'dot') {
+      // Move dot - snap to grid
+      const snapped = snapToGrid(p.x, p.y);
+      const ss = getActSeg();
+      const s = ss[expDragging.strokeIdx];
+      if (s) {
+        if (expDragging.endpoint === 'start') {
+          // Also update any strokes that share this endpoint
+          const oldX = s.x1, oldY = s.y1;
+          ss.forEach(stroke => {
+            if (stroke.x1 === oldX && stroke.y1 === oldY) { stroke.x1 = snapped.x; stroke.y1 = snapped.y; }
+            if (stroke.x2 === oldX && stroke.y2 === oldY) { stroke.x2 = snapped.x; stroke.y2 = snapped.y; }
+          });
+        } else {
+          const oldX = s.x2, oldY = s.y2;
+          ss.forEach(stroke => {
+            if (stroke.x1 === oldX && stroke.y1 === oldY) { stroke.x1 = snapped.x; stroke.y1 = snapped.y; }
+            if (stroke.x2 === oldX && stroke.y2 === oldY) { stroke.x2 = snapped.x; stroke.y2 = snapped.y; }
+          });
+        }
+        renderCanvas();
+      }
+      return;
+    }
+
+    if (expDragging.type === 'curve') {
+      // Move control point - clamp to max distance
+      const ss = getActSeg();
+      const s = ss[expDragging.strokeIdx];
+      if (s) {
+        const clamped = clampControlPoint(s.x1, s.y1, s.x2, s.y2, p.x, p.y);
+        expDragging.cx = clamped.cx;
+        expDragging.cy = clamped.cy;
+        renderCanvas();
+      }
+      return;
+    }
+  }
+
+  // ── Experimental: Update hover state ──
+  if (EXP_ANY && tool === 'draw' && !dragging) {
+    const endpoint = findEndpointAt(p.x, p.y);
+    const strokeMid = findStrokeMidAt(p.x, p.y);
+
+    let newHover = null;
+    if (endpoint) {
+      newHover = { type: 'dot', ...endpoint };
+      drawSVG.classList.add('exp-grab');
+      drawSVG.classList.remove('exp-curve');
+    } else if (strokeMid) {
+      newHover = { type: 'curve', ...strokeMid };
+      drawSVG.classList.add('exp-curve');
+      drawSVG.classList.remove('exp-grab');
+    } else {
+      drawSVG.classList.remove('exp-grab', 'exp-curve');
+    }
+
+    if (JSON.stringify(newHover) !== JSON.stringify(expHover)) {
+      expHover = newHover;
+      renderCanvas();
+    }
+  }
+
+  // ── Original behavior ──
   if(tool==='draw'){const d=nearDot(p.x,p.y);if(!dotEq(d,hoverDot)){hoverDot=d;renderCanvas();}}
   else{const si=nearStroke(p.x,p.y);if(si!==hoverSI){hoverSI=si;renderCanvas();}}
 });
 drawSVG.addEventListener('mouseup',e=>{
+  // ── Experimental: Finish dragging ──
+  if (EXP_ANY && expDragging) {
+    if (expDragging.type === 'curve') {
+      // Commit curve change
+      const ss = getActSeg();
+      const s = ss[expDragging.strokeIdx];
+      if (s) {
+        s.curved = true;
+        s.cx = expDragging.cx;
+        s.cy = expDragging.cy;
+      }
+    }
+    // Dot movement is already committed during mousemove
+    expDragging = null;
+    drawSVG.classList.remove('exp-grabbing');
+    renderCanvas();
+    return;
+  }
+
+  // ── Original behavior ──
   if(tool!=='draw'||!dragging)return;
   dragging=false;const p=svgPt(e),d=nearDot(p.x,p.y);
   if(d&&!dotEq(d,startDot)){
@@ -870,7 +1209,12 @@ drawSVG.addEventListener('mouseup',e=>{
   startDot=null;renderCanvas();
 });
 drawSVG.addEventListener('mouseleave',()=>{
-  hoverDot=null;hoverSI=-1;if(dragging){dragging=false;startDot=null;}renderCanvas();
+  hoverDot=null;hoverSI=-1;
+  if(dragging){dragging=false;startDot=null;}
+  if(expDragging){expDragging=null;}
+  expHover=null;
+  drawSVG.classList.remove('exp-grab','exp-curve','exp-grabbing');
+  renderCanvas();
 });
 drawSVG.addEventListener('touchstart',e=>{e.preventDefault();const p=svgPt(e.touches[0]);
   if(tool==='draw'){const d=nearDot(p.x,p.y);if(d){dragging=true;startDot=d;hoverDot=d;renderCanvas();}}
