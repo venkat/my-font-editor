@@ -65,6 +65,15 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
   background:var(--pu);border-color:var(--pu);color:#fff;
   box-shadow:0 2px 8px rgba(124,58,237,.4)
 }
+/* Modified indicator dot */
+.cbtn{position:relative}
+.cbtn .mod-dot{
+  position:absolute;top:2px;right:2px;width:6px;height:6px;
+  border-radius:50%;background:var(--pk);
+  box-shadow:0 1px 3px rgba(236,72,153,.5);
+  display:none
+}
+.cbtn.modified .mod-dot{display:block}
 
 /* ── CENTER ─────────────────────────────────────── */
 .center{display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}

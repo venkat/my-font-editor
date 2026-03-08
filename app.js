@@ -158,6 +158,31 @@ function expandFont() {
   return R;
 }
 
+// Cache default font for modification detection
+const DEFAULT_FONT = expandFont();
+
+// Check if a character has been modified from default
+function isCharModified(letter) {
+  const current = glyphs[letter] || [];
+  const original = DEFAULT_FONT[letter] || [];
+
+  // Different stroke count = modified
+  if (current.length !== original.length) return true;
+
+  // Compare each stroke
+  for (let i = 0; i < current.length; i++) {
+    const c = current[i];
+    const o = original[i];
+    // Check basic stroke properties
+    if (c.x1 !== o.x1 || c.y1 !== o.y1 || c.x2 !== o.x2 || c.y2 !== o.y2) return true;
+    if ((c.w || 11) !== (o.w || 11)) return true;
+    // Check if curved
+    if (c.curved !== o.curved) return true;
+    if (c.curved && (c.cx !== o.cx || c.cy !== o.cy)) return true;
+  }
+  return false;
+}
+
 // ═══════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════
@@ -740,8 +765,14 @@ function buildCharPicker() {
     for (const l of letters) {
       const b = document.createElement('button');
       b.className = 'cbtn';
-      b.textContent = l;
       b.dataset.l = l;
+      // Add letter text
+      const txt = document.createTextNode(l);
+      b.appendChild(txt);
+      // Add modified indicator dot
+      const dot = document.createElement('span');
+      dot.className = 'mod-dot';
+      b.appendChild(dot);
       b.addEventListener('click', () => { selectLetter(l); closeCharPicker(); });
       gridEl.appendChild(b);
     }
@@ -752,10 +783,19 @@ function buildCharPicker() {
   makeGrid(SYMBOLS, document.getElementById('char-grid-sym'));
 }
 
+// Update modified indicators on all character picker buttons
+function updateCharPickerModified() {
+  charOverlay.querySelectorAll('.cbtn').forEach(b => {
+    const l = b.dataset.l;
+    b.classList.toggle('modified', isCharModified(l));
+  });
+}
+
 function openCharPicker() {
-  // Highlight current letter
+  // Highlight current letter and update modified indicators
   charOverlay.querySelectorAll('.cbtn').forEach(b =>
     b.classList.toggle('active', b.dataset.l === curLetter));
+  updateCharPickerModified();
   charOverlay.classList.add('open');
 }
 
@@ -1236,12 +1276,12 @@ document.getElementById('te').addEventListener('click',()=>{
 document.getElementById('tu').addEventListener('click',doUndo);
 document.getElementById('tc').addEventListener('click',()=>{
   // Reset current letter to default font
-  const defaultFont = expandFont();
-  const defaultStrokes = defaultFont[curLetter] || [];
+  const defaultStrokes = DEFAULT_FONT[curLetter] || [];
   if(confirm(`Reset "${curLetter}" to default?`)){
     pushUndo();
     setActStrokes(JSON.parse(JSON.stringify(defaultStrokes)));
     renderCanvas();
+    updateCharPickerModified();
   }
 });
 document.querySelectorAll('.wb').forEach(b=>{
@@ -1277,6 +1317,7 @@ document.getElementById('btn-otf').addEventListener('click',()=>{
 document.getElementById('btn-rst').addEventListener('click',()=>{
   if(confirm('Reset ALL letters to the default font? (Your changes will be lost!)')){
     glyphs=expandFont();undoStk={};renderCanvas();
+    updateCharPickerModified();
   }
 });
 
