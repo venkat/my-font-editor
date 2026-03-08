@@ -225,6 +225,10 @@ let pressStart    = null;          // { x, y, time } for tap detection
 // TAP_THRESH defined above with adaptive thresholds (10px desktop, 18px touch)
 const TAP_TIME_LIMIT = 300;        // Max time in ms to count as tap
 
+// Guard against duplicate touch/mouse events (some devices fire both)
+let lastTouchTime = 0;
+const TOUCH_MOUSE_GUARD = 500;     // Ignore mouse events within 500ms of touch
+
 // Load / initialise
 (function init() {
   try {
@@ -888,6 +892,8 @@ function clearSelection() {
 }
 
 drawSVG.addEventListener('mousedown',e=>{
+  // Guard against duplicate events on touch devices
+  if (Date.now() - lastTouchTime < TOUCH_MOUSE_GUARD) return;
   const p=svgPt(e);
 
   // ── Erase mode: original behavior ──
@@ -947,6 +953,8 @@ drawSVG.addEventListener('mousedown',e=>{
 });
 
 drawSVG.addEventListener('mousemove',e=>{
+  // Guard against duplicate events on touch devices
+  if (Date.now() - lastTouchTime < TOUCH_MOUSE_GUARD) return;
   const p=svgPt(e);
 
   // ── Experimental: Handle manipulation dragging ──
@@ -1025,6 +1033,8 @@ drawSVG.addEventListener('mousemove',e=>{
 });
 
 drawSVG.addEventListener('mouseup',e=>{
+  // Guard against duplicate events on touch devices
+  if (Date.now() - lastTouchTime < TOUCH_MOUSE_GUARD) return;
   const p = svgPt(e);
 
   // ── Experimental: Finish manipulation ──
@@ -1044,8 +1054,10 @@ drawSVG.addEventListener('mouseup',e=>{
 
     if (wasTap) {
       // Tap detected - select element or deselect
-      const endpoint = findEndpointAt(p.x, p.y);
-      const strokeMid = findStrokeMidAt(p.x, p.y);
+      // CRITICAL: Use pressStart position for hit detection, not current p
+      // Mouse/finger is most accurately positioned at moment of press, not release
+      const endpoint = findEndpointAt(pressStart.x, pressStart.y);
+      const strokeMid = findStrokeMidAt(pressStart.x, pressStart.y);
 
       if (endpoint) {
         // Select this dot
@@ -1107,6 +1119,7 @@ drawSVG.addEventListener('mouseleave',()=>{
 // Touch events - same logic as mouse
 drawSVG.addEventListener('touchstart',e=>{
   e.preventDefault();
+  lastTouchTime = Date.now();  // Guard against duplicate mouse events
   const p = svgPt(e.touches[0]);
 
   if (tool === 'erase') {
@@ -1144,6 +1157,7 @@ drawSVG.addEventListener('touchstart',e=>{
 
 drawSVG.addEventListener('touchmove',e=>{
   e.preventDefault();
+  lastTouchTime = Date.now();  // Guard against duplicate mouse events
   const p = svgPt(e.touches[0]);
 
   if (SMART_MODE && expDragging) {
@@ -1181,6 +1195,7 @@ drawSVG.addEventListener('touchmove',e=>{
 
 drawSVG.addEventListener('touchend',e=>{
   e.preventDefault();
+  lastTouchTime = Date.now();  // Guard against duplicate mouse events
   const p = svgPt(e.changedTouches[0]);
 
   if (SMART_MODE && expDragging) {
@@ -1194,8 +1209,10 @@ drawSVG.addEventListener('touchend',e=>{
     const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
     const duration = Date.now() - pressStart.time;
     if (dist < TAP_THRESH && duration < TAP_TIME_LIMIT) {
-      const endpoint = findEndpointAt(p.x, p.y);
-      const strokeMid = findStrokeMidAt(p.x, p.y);
+      // CRITICAL: Use pressStart (touchstart) position for hit detection, not p (touchend)
+      // Finger is most accurately positioned at moment of contact, not when lifting
+      const endpoint = findEndpointAt(pressStart.x, pressStart.y);
+      const strokeMid = findStrokeMidAt(pressStart.x, pressStart.y);
       if (endpoint) {
         expSelected = { type: 'dot', strokeIdx: endpoint.strokeIdx,
           endpoint: endpoint.endpoint, x: endpoint.x, y: endpoint.y };
