@@ -10,12 +10,31 @@ const CW = COLS*SP + MX*2;            // 200
 // Row landmarks — declared before CH which depends on ROW_DESC
 const ROW_CAP=1, ROW_XHGT=3, ROW_BASE=9, ROW_DESC=11;
 const CH = MY + ROW_DESC*SP + 20;     // 428 — tight fit: top margin + rows 1-11 + small bottom padding
-// Dot sizes
+// Dot sizes (base values for desktop)
 const DOT_LG=Math.round(SP*0.27);     // ≈ 11px
 const DOT_SM=Math.round(SP*0.13);     // ≈ 5px
 const DOT_EP=Math.round(SP*0.22);     // ≈ 9px
 const DOT_HV=Math.round(SP*0.27);
 const SNAP=22;
+
+// ═══════════════════════════════════════════════════════
+// TOUCH DEVICE DETECTION & ADAPTIVE THRESHOLDS
+// Fingers are ~40-50px, mice are ~1px precise
+// ═══════════════════════════════════════════════════════
+const IS_TOUCH_DEVICE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+const TOUCH_SCALE = IS_TOUCH_DEVICE ? 2.0 : 1.0;  // 2x larger thresholds for touch
+
+// Adaptive thresholds - scale up for touch devices
+const SNAP_TOUCH = Math.round(SNAP * TOUCH_SCALE);              // 22 → 44px on touch
+const TAP_THRESH = IS_TOUCH_DEVICE ? 18 : 10;                   // 10 → 18px on touch
+const ENDPOINT_RADIUS = IS_TOUCH_DEVICE ? 28 : 15;              // 15 → 28px on touch
+const STROKE_MID_THRESH = IS_TOUCH_DEVICE ? 24 : 12;            // 12 → 24px on touch
+const STROKE_HOVER_PAD = IS_TOUCH_DEVICE ? 18 : 8;              // +8 → +18px on touch
+const CURVE_LIMIT = IS_TOUCH_DEVICE ? SP * 2.2 : SP * 1.5;      // ~47 → ~68px on touch
+
+// Visual scaling for touch - larger dots are easier to see and target
+const DOT_EP_VIS = IS_TOUCH_DEVICE ? Math.round(DOT_EP * 1.4) : DOT_EP;  // 9 → 13px on touch
+const DOT_HV_VIS = IS_TOUCH_DEVICE ? Math.round(DOT_HV * 1.3) : DOT_HV;  // 11 → 14px on touch
 const UPM=1000;
 const CAP_PX = (ROW_BASE-ROW_CAP)*SP; // 320
 const CAP_U  = 700;
@@ -36,8 +55,8 @@ const STROKE_COLOR = '#1e1b2e';
 // ═══════════════════════════════════════════════════════
 const SMART_MODE = true;  // Smart interaction mode is now the default
 
-// Curve constraints
-const CURVE_MAX_DIST = SP * 1.5;  // Max control point distance from line (~60px)
+// Curve constraints (now uses adaptive CURVE_LIMIT defined above)
+const CURVE_MAX_DIST = CURVE_LIMIT;  // ~47px desktop, ~68px touch
 
 // ═══════════════════════════════════════════════════════
 // DEFAULT FONT — faithful conversion from Brutalita source
@@ -203,7 +222,7 @@ let expHover      = null;          // What we're hovering over for visual feedba
 // Tap-to-select state (for ?exp=grab and ?exp=smart)
 let expSelected   = null;          // { type: 'stroke'|'dot', strokeIdx, endpoint?, x?, y? }
 let pressStart    = null;          // { x, y, time } for tap detection
-const TAP_THRESHOLD = 10;          // Max movement in pixels to count as tap
+// TAP_THRESH defined above with adaptive thresholds (10px desktop, 18px touch)
 const TAP_TIME_LIMIT = 300;        // Max time in ms to count as tap
 
 // Load / initialise
@@ -249,7 +268,7 @@ function allDots() {
   return d;
 }
 function nearDot(px,py) {
-  let best=null,bd=SNAP;
+  let best=null,bd=SNAP_TOUCH;  // Use adaptive threshold (22px desktop, 44px touch)
   for(const d of allDots()){const v=Math.hypot(d.x-px,d.y-py);if(v<bd){bd=v;best=d;}}
   return best;
 }
@@ -259,7 +278,7 @@ function nearStroke(px,py) {
   const ss=getActStrokes();
   for(let i=ss.length-1;i>=0;i--){
     const s=ss[i];
-    const threshold = (s.w||11)/2 + 8;
+    const threshold = (s.w||11)/2 + STROKE_HOVER_PAD;  // +8 desktop, +18 touch
 
     // For curved strokes: sample points along the bezier curve
     if (s.curved && s.cx !== undefined && s.cy !== undefined) {
@@ -284,7 +303,7 @@ function nearStroke(px,py) {
 // EXPERIMENTAL: HIT DETECTION FOR DOT MOVEMENT & CURVES
 // ═══════════════════════════════════════════════════════
 // Find stroke endpoint (purple dot) near cursor
-function findEndpointAt(px, py, radius = 15) {
+function findEndpointAt(px, py, radius = ENDPOINT_RADIUS) {  // 15px desktop, 28px touch
   if (!SMART_MODE) return null;
   const ss = getActStrokes();
   for (let i = 0; i < ss.length; i++) {
@@ -302,7 +321,7 @@ function findEndpointAt(px, py, radius = 15) {
 }
 
 // Find stroke for bending - detects clicks on the stroke itself (excludes endpoints)
-function findStrokeMidAt(px, py, threshold = 12) {
+function findStrokeMidAt(px, py, threshold = STROKE_MID_THRESH) {  // 12px desktop, 24px touch
   if (!SMART_MODE) return null;
   const ss = getActStrokes();
   for (let i = ss.length - 1; i >= 0; i--) {
@@ -451,9 +470,9 @@ function renderCanvas() {
     const isHover=dotEq(d,hoverDot);
     const isStart=dotEq(d,startDot);
     if(isStart){
-      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_EP,fill:STROKE_COLOR,stroke:'white','stroke-width':2}));
+      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_EP_VIS,fill:STROKE_COLOR,stroke:'white','stroke-width':2}));
     } else if(isHover&&tool==='draw'){
-      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_HV,fill:'#a78bfa',opacity:.9}));
+      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_HV_VIS,fill:'#a78bfa',opacity:.9}));
     } else if(isEndpoint){
       // skip — drawn again after strokes
     } else {
@@ -511,18 +530,18 @@ function renderCanvas() {
     // Draw selection ring behind the dot
     if (isSelectedDot) {
       const ring = sa(ns('circle'), {
-        cx: d.x, cy: d.y, r: DOT_EP + 6,
+        cx: d.x, cy: d.y, r: DOT_EP_VIS + 6,
         fill: 'none', stroke: '#7c3aed', 'stroke-width': 3, opacity: 0.6
       });
       drawSVG.appendChild(ring);
     }
 
     if(isStart){
-      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_EP,fill:STROKE_COLOR,stroke:'white','stroke-width':2}));
+      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_EP_VIS,fill:STROKE_COLOR,stroke:'white','stroke-width':2}));
     } else if(isHover){
-      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_HV,fill:'#a78bfa'}));
+      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_HV_VIS,fill:'#a78bfa'}));
     } else {
-      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_EP,fill:'#4c1d95',stroke:'white','stroke-width':1.5}));
+      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_EP_VIS,fill:'#4c1d95',stroke:'white','stroke-width':1.5}));
     }
   }
   renderMini(); renderBig(); updateLeft(); save();
@@ -859,7 +878,7 @@ function isOnSelectedStroke(px, py) {
 // Helper: Check if click is on a selected dot
 function isOnSelectedDot(px, py) {
   if (!expSelected || expSelected.type !== 'dot') return false;
-  return Math.hypot(px - expSelected.x, py - expSelected.y) < 15;
+  return Math.hypot(px - expSelected.x, py - expSelected.y) < ENDPOINT_RADIUS;  // 15px desktop, 28px touch
 }
 
 // Helper: Clear selection
@@ -1021,7 +1040,7 @@ drawSVG.addEventListener('mouseup',e=>{
   if (SMART_MODE && tool === 'draw' && pressStart) {
     const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
     const duration = Date.now() - pressStart.time;
-    const wasTap = dist < TAP_THRESHOLD && duration < TAP_TIME_LIMIT;
+    const wasTap = dist < TAP_THRESH && duration < TAP_TIME_LIMIT;
 
     if (wasTap) {
       // Tap detected - select element or deselect
@@ -1174,7 +1193,7 @@ drawSVG.addEventListener('touchend',e=>{
   if (SMART_MODE && tool === 'draw' && pressStart) {
     const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
     const duration = Date.now() - pressStart.time;
-    if (dist < TAP_THRESHOLD && duration < TAP_TIME_LIMIT) {
+    if (dist < TAP_THRESH && duration < TAP_TIME_LIMIT) {
       const endpoint = findEndpointAt(p.x, p.y);
       const strokeMid = findStrokeMidAt(p.x, p.y);
       if (endpoint) {
