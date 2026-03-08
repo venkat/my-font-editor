@@ -133,10 +133,6 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
 .wb{width:30px;height:26px;border-radius:6px;border:2px solid var(--br);background:#f9f8ff;
   cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .1s}
 .wb:hover,.wb.active{border-color:var(--pu);background:#ede9fe}
-.cs{width:19px;height:19px;border-radius:50%;cursor:pointer;border:3px solid transparent;
-  transition:all .1s;box-shadow:0 1px 3px rgba(0,0,0,.15);flex-shrink:0}
-.cs:hover{transform:scale(1.2)}
-.cs.active{border-color:var(--tx);transform:scale(1.22);box-shadow:0 2px 7px rgba(0,0,0,.28)}
 /* segment bar */
 .seg-bar{padding:6px 10px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;
   border-bottom:2px solid var(--br);background:#faf8ff}
@@ -247,7 +243,6 @@ UuVvWwXxYyZz
         <svg width="22" height="8"><line x1="2" y1="4" x2="20" y2="4" stroke="#555" stroke-width="9" stroke-linecap="round"/></svg>
       </button>
     </div>
-    <div class="tg" id="pal" style="gap:3px;align-items:center;flex-wrap:wrap;max-width:130px"></div>
   </div>
   <div class="seg-bar" id="seg-bar"></div>
   <div class="mini-box">
@@ -289,7 +284,7 @@ const DIGITS  = '0123456789'.split('');
 const SYMBOLS = '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~\u00b4'.split('');
 const ALL_CHARS = [...UPPER,...LOWER,...DIGITS,...SYMBOLS];
 const ALL_LTR   = ALL_CHARS; // alias used internally
-const COLORS  = ['#1e1b2e','#e11d48','#f97316','#f59e0b','#22c55e','#3b82f6','#7c3aed','#ec4899','#ffffff'];
+const STROKE_COLOR = '#1e1b2e';
 
 // ═══════════════════════════════════════════════════════
 // DEFAULT FONT — faithful conversion from Brutalita source
@@ -417,7 +412,6 @@ let curSeg    = 0;
 let glyphs    = {};   // { letter: Array<Array<Stroke>> }
 let undoStk   = {};   // { 'A_0': [...JSON strings...] }
 let tool      = 'draw';
-let penColor  = '#1e1b2e';
 let penWidth  = 11;
 let dragging  = false;
 let startDot  = null;
@@ -531,7 +525,7 @@ function renderCanvas() {
     const isHover=dotEq(d,hoverDot);
     const isStart=dotEq(d,startDot);
     if(isStart){
-      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_EP,fill:penColor,stroke:'white','stroke-width':2}));
+      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_EP,fill:STROKE_COLOR,stroke:'white','stroke-width':2}));
     } else if(isHover&&tool==='draw'){
       drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_HV,fill:'#a78bfa',opacity:.9}));
     } else if(isEndpoint){
@@ -562,7 +556,7 @@ function renderCanvas() {
 
   // ── Ghost drag line ──
   if(dragging&&startDot&&hoverDot&&!dotEq(startDot,hoverDot))
-    drawSVG.appendChild(mkLine(startDot.x,startDot.y,hoverDot.x,hoverDot.y,penColor,penWidth,.42));
+    drawSVG.appendChild(mkLine(startDot.x,startDot.y,hoverDot.x,hoverDot.y,STROKE_COLOR,penWidth,.42));
 
   // ── Endpoint dots drawn LAST so they sit on top of strokes ──
   for(const d of allDots()){
@@ -571,7 +565,7 @@ function renderCanvas() {
     const isStart=dotEq(d,startDot);
     const isHover=dotEq(d,hoverDot)&&tool==='draw';
     if(isStart){
-      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_EP,fill:penColor,stroke:'white','stroke-width':2}));
+      drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_EP,fill:STROKE_COLOR,stroke:'white','stroke-width':2}));
     } else if(isHover){
       drawSVG.appendChild(sa(ns('circle'),{cx:d.x,cy:d.y,r:DOT_HV,fill:'#a78bfa'}));
     } else {
@@ -874,7 +868,7 @@ drawSVG.addEventListener('mouseup',e=>{
     pushUndo();
     if(!glyphs[curLetter])glyphs[curLetter]=[];
     while(glyphs[curLetter].length<=curSeg)glyphs[curLetter].push([]);
-    glyphs[curLetter][curSeg].push({x1:startDot.x,y1:startDot.y,x2:d.x,y2:d.y,color:penColor,w:penWidth});
+    glyphs[curLetter][curSeg].push({x1:startDot.x,y1:startDot.y,x2:d.x,y2:d.y,color:STROKE_COLOR,w:penWidth});
   }
   startDot=null;renderCanvas();
 });
@@ -891,7 +885,7 @@ drawSVG.addEventListener('touchend',e=>{e.preventDefault();const p=svgPt(e.chang
   if(tool!=='draw'||!dragging)return;dragging=false;const d=nearDot(p.x,p.y);
   if(d&&!dotEq(d,startDot)){pushUndo();if(!glyphs[curLetter])glyphs[curLetter]=[];
     while(glyphs[curLetter].length<=curSeg)glyphs[curLetter].push([]);
-    glyphs[curLetter][curSeg].push({x1:startDot.x,y1:startDot.y,x2:d.x,y2:d.y,color:penColor,w:penWidth});}
+    glyphs[curLetter][curSeg].push({x1:startDot.x,y1:startDot.y,x2:d.x,y2:d.y,color:STROKE_COLOR,w:penWidth});}
   startDot=null;renderCanvas();
 },{passive:false});
 
@@ -949,14 +943,6 @@ document.querySelectorAll('.wb').forEach(b=>{
     document.querySelectorAll('.wb').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
   });
-});
-const palEl=document.getElementById('pal');
-COLORS.forEach(c=>{
-  const s=document.createElement('button');s.className='cs'+(c===penColor?' active':'');
-  s.style.background=c;if(c==='#ffffff')s.style.boxShadow='inset 0 0 0 1.5px #ccc,0 1px 3px rgba(0,0,0,.15)';
-  s.title=c;
-  s.addEventListener('click',()=>{penColor=c;document.querySelectorAll('.cs').forEach(x=>x.classList.remove('active'));s.classList.add('active');});
-  palEl.appendChild(s);
 });
 
 // ═══════════════════════════════════════════════════════
