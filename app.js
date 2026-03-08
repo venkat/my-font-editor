@@ -1156,19 +1156,8 @@ drawSVG.addEventListener('mouseleave',()=>{
   renderCanvas();
 });
 
-// On-screen debug overlay for iPhone testing
-const debugOverlay = document.createElement('div');
-debugOverlay.id = 'debug-overlay';
-debugOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;background:rgba(0,0,0,0.85);color:#0f0;font-family:monospace;font-size:11px;padding:8px;z-index:99999;max-height:120px;overflow-y:auto;pointer-events:none;';
-document.body.appendChild(debugOverlay);
-const debugMsgs = [];
-function dbg(msg, color = '#0f0') {
-  dbg(msg);
-  debugMsgs.unshift(`<span style="color:${color}">${msg}</span>`);
-  if (debugMsgs.length > 8) debugMsgs.pop();
-  debugOverlay.innerHTML = debugMsgs.join('<br>');
-}
-dbg('Debug ready - interact with canvas', '#ff0');
+// Simple touch debug logging
+function dbg(msg) { console.log('[TOUCH]', typeof msg === 'object' ? JSON.stringify(msg) : msg); }
 
 // Touch events - same logic as mouse
 drawSVG.addEventListener('touchstart',e=>{
