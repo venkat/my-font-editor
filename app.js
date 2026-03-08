@@ -1167,6 +1167,58 @@ debugLog('Touch device: ' + (IS_TOUCH_DEVICE ? 'YES' : 'NO'), '#ff0');
 debugLog('touchModeActive: ' + touchModeActive, '#ff0');
 debugLog('Thresholds - endpoint:' + getEndpointRadius() + ' snap:' + getSnapTouch(), '#ff0');
 
+// Self-test function for touch simulation
+window.testTouch = function(action = 'tap') {
+  const svg = document.getElementById('draw-svg');
+  const rect = svg.getBoundingClientRect();
+
+  // Calculate positions for different tests
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+
+  debugLog('TEST: ' + action + ' at ' + centerX.toFixed(0) + ',' + centerY.toFixed(0), '#f0f');
+
+  function createTouch(x, y) {
+    return new Touch({
+      identifier: Date.now(),
+      target: svg,
+      clientX: x,
+      clientY: y,
+      pageX: x,
+      pageY: y
+    });
+  }
+
+  if (action === 'tap') {
+    const touch = createTouch(centerX, centerY);
+    svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [touch], targetTouches: [touch], changedTouches: [touch] }));
+    setTimeout(() => {
+      svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [touch] }));
+      debugLog('TEST: tap complete', '#0f0');
+    }, 50);
+  } else if (action === 'drag') {
+    const touch1 = createTouch(centerX, centerY);
+    svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [touch1], targetTouches: [touch1], changedTouches: [touch1] }));
+
+    // Simulate drag movement
+    let step = 0;
+    const dragInterval = setInterval(() => {
+      step++;
+      const touch = createTouch(centerX + step * 10, centerY);
+      svg.dispatchEvent(new TouchEvent('touchmove', { bubbles: true, cancelable: true, touches: [touch], targetTouches: [touch], changedTouches: [touch] }));
+      if (step >= 5) {
+        clearInterval(dragInterval);
+        const endTouch = createTouch(centerX + 50, centerY);
+        svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [endTouch] }));
+        debugLog('TEST: drag complete', '#0f0');
+      }
+    }, 50);
+  }
+};
+
+// Add test buttons to debug panel
+debugPanel.innerHTML += '<div style="margin-top:8px"><button onclick="testTouch(\'tap\')" style="margin-right:5px">Test Tap</button><button onclick="testTouch(\'drag\')">Test Drag</button></div>';
+
 // Touch events - same logic as mouse
 drawSVG.addEventListener('touchstart',e=>{
   debugLog('TOUCHSTART fired!', '#0ff');
