@@ -1214,29 +1214,36 @@ window.testTouch = function(action = 'tap') {
       }
     }, 50);
   } else if (action === 'select-then-drag') {
-    // First tap to select a stroke (top horizontal line of A is at y ≈ 43)
-    const strokeY = rect.top + 60;  // Near top of canvas where horizontal stroke is
-    debugLog('TEST: Tapping to select stroke...', '#ff0');
+    // First tap to select a stroke - need to hit the MIDDLE of a stroke, not an endpoint
+    // The horizontal crossbar of A is at SVG y ≈ 229 (row 7), x from 38 to 162
+    // We need to hit the middle of the stroke, avoiding endpoints
+    const strokeMidX = rect.left + rect.width / 2;  // Center X
+    const strokeMidY = rect.top + rect.height * 0.55;  // ~55% down is near the crossbar
+    debugLog('TEST: Tapping to select stroke at ' + strokeMidX.toFixed(0) + ',' + strokeMidY.toFixed(0), '#ff0');
 
-    const tap1 = createTouch(centerX, strokeY);
+    const tap1 = createTouch(strokeMidX, strokeMidY);
     svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [tap1], targetTouches: [tap1], changedTouches: [tap1] }));
     setTimeout(() => {
       svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [tap1] }));
 
+      // Check what was selected
+      debugLog('TEST: After tap, expSelected=' + (expSelected ? expSelected.type : 'null'), '#ff0');
+
       // Now drag the selected stroke to bend it
       setTimeout(() => {
         debugLog('TEST: Dragging to bend stroke...', '#ff0');
-        const drag1 = createTouch(centerX, strokeY);
+        const drag1 = createTouch(strokeMidX, strokeMidY);
         svg.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, touches: [drag1], targetTouches: [drag1], changedTouches: [drag1] }));
 
         let step = 0;
         const bendInterval = setInterval(() => {
           step++;
-          const touch = createTouch(centerX, strokeY + step * 15);  // Drag downward to bend
+          const touch = createTouch(strokeMidX, strokeMidY + step * 20);  // Drag downward to bend
           svg.dispatchEvent(new TouchEvent('touchmove', { bubbles: true, cancelable: true, touches: [touch], targetTouches: [touch], changedTouches: [touch] }));
+          debugLog('TEST: move step ' + step, '#888');
           if (step >= 3) {
             clearInterval(bendInterval);
-            const endTouch = createTouch(centerX, strokeY + 45);
+            const endTouch = createTouch(strokeMidX, strokeMidY + 60);
             svg.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [endTouch] }));
             debugLog('TEST: select-then-drag complete', '#0f0');
           }
