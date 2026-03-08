@@ -1220,7 +1220,13 @@ drawSVG.addEventListener('touchstart',e=>{
   }
 
   const d = nearDot(p.x, p.y);
-  if (d) { dragging = true; startDot = d; hoverDot = d; renderCanvas(); }
+  if (d) {
+    dragging = true; startDot = d; hoverDot = d;
+    debugLog('Set dragging=true, startDot at ' + d.c + ',' + d.r, '#ff0');
+    renderCanvas();
+  } else {
+    debugLog('No dot found for drawing', '#888');
+  }
 },{passive:false});
 
 drawSVG.addEventListener('touchmove',e=>{
@@ -1263,12 +1269,14 @@ drawSVG.addEventListener('touchmove',e=>{
 
 drawSVG.addEventListener('touchend',e=>{
   e.preventDefault();
-  lastTouchTime = Date.now();  // Guard against duplicate mouse events
+  debugLog('TOUCHEND fired!', '#f0f');
+  lastTouchTime = Date.now();
   const p = svgPt(e.changedTouches[0]);
 
   if (SMART_MODE && expDragging) {
+    debugLog('Was dragging, ending drag', '#ff0');
     expDragging = null;
-    expSelected = null;  // Auto-deselect after bend/move completes
+    expSelected = null;
     renderCanvas();
     return;
   }
@@ -1276,18 +1284,25 @@ drawSVG.addEventListener('touchend',e=>{
   if (SMART_MODE && tool === 'draw' && pressStart) {
     const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
     const duration = Date.now() - pressStart.time;
-    if (dist < getTapThresh() && duration < TAP_TIME_LIMIT) {
-      // CRITICAL: Use pressStart (touchstart) position for hit detection, not p (touchend)
-      // Finger is most accurately positioned at moment of contact, not when lifting
+    const tapThresh = getTapThresh();
+    const wasTap = dist < tapThresh && duration < TAP_TIME_LIMIT;
+    debugLog('Tap check: dist=' + dist.toFixed(0) + ' thresh=' + tapThresh + ' duration=' + duration + 'ms → ' + (wasTap ? 'TAP!' : 'NOT tap'), wasTap ? '#0f0' : '#f00');
+
+    if (wasTap) {
       const endpoint = findEndpointAt(pressStart.x, pressStart.y);
       const strokeMid = findStrokeMidAt(pressStart.x, pressStart.y);
+      debugLog('Selection: endpoint=' + (endpoint?'YES':'no') + ' strokeMid=' + (strokeMid?'YES':'no'), '#0ff');
+
       if (endpoint) {
         expSelected = { type: 'dot', strokeIdx: endpoint.strokeIdx,
           endpoint: endpoint.endpoint, x: endpoint.x, y: endpoint.y };
+        debugLog('Selected DOT at stroke ' + endpoint.strokeIdx, '#0f0');
       } else if (strokeMid) {
         expSelected = { type: 'stroke', strokeIdx: strokeMid.strokeIdx };
+        debugLog('Selected STROKE ' + strokeMid.strokeIdx, '#0f0');
       } else {
         expSelected = null;
+        debugLog('Nothing to select, deselecting', '#ff0');
       }
       dragging = false; startDot = null; pressStart = null;
       renderCanvas();
