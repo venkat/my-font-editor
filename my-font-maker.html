@@ -161,6 +161,7 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
 .mini-lbl{font-size:.56rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--mt)}
 .mini-inner{background:#f9f8ff;border-radius:9px;border:2px solid var(--br);
   height:62px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-top:4px}
+#mini-letter{font-family:'FontMakerPreview','Nunito',sans-serif;font-size:42px;color:#1e1b2e;line-height:1}
 /* canvas wrap */
 .canvas-wrap{padding:10px;display:flex;justify-content:center}
 #draw-svg{border-radius:10px;background:white;box-shadow:0 3px 18px rgba(0,0,0,.1);
@@ -253,7 +254,7 @@ UuVvWwXxYyZz
   <div class="seg-bar" id="seg-bar"></div>
   <div class="mini-box">
     <div class="mini-lbl">Live preview of current letter</div>
-    <div class="mini-inner"><svg id="mini-svg"></svg></div>
+    <div class="mini-inner"><span id="mini-letter">A</span></div>
   </div>
   <div class="canvas-wrap">
     <svg id="draw-svg"></svg>
@@ -583,23 +584,13 @@ function renderCanvas() {
 
 // ═══════════════════════════════════════════════════════
 // RENDER MINI LETTER PREVIEW (right panel)
+// Uses the same FontFace font as the main preview for accuracy
 // ═══════════════════════════════════════════════════════
-const miniSVG=document.getElementById('mini-svg');
+const miniLetter = document.getElementById('mini-letter');
 function renderMini() {
-  const MINI_H=50; const sc=MINI_H/(ROWS*SP);
-  const MINI_W=Math.round(COLS*SP*sc)+10;
-  sa(miniSVG,{width:MINI_W,height:MINI_H,viewBox:`0 0 ${MINI_W} ${MINI_H}`});
-  miniSVG.innerHTML='';
-  const stks=allStk(curLetter);
-  if(!stks.length){
-    const t=ns('text');
-    sa(t,{x:MINI_W/2,y:MINI_H*.75,'text-anchor':'middle','font-size':Math.round(MINI_H*.7),
-          fill:'#e0ddf0','font-family':'Nunito,sans-serif','font-weight':900});
-    t.textContent=curLetter; miniSVG.appendChild(t); return;
-  }
-  for(const s of stks)
-    miniSVG.appendChild(mkLine((s.x1-MX)*sc,(s.y1-MY)*sc,(s.x2-MX)*sc,(s.y2-MY)*sc,
-      s.color||'#1e1b2e',Math.max(1.5,(s.w||11)*sc)));
+  miniLetter.textContent = curLetter;
+  // Color indicates if letter has strokes
+  miniLetter.style.color = allStk(curLetter).length ? '#1e1b2e' : '#e0ddf0';
 }
 
 // ═══════════════════════════════════════════════════════
