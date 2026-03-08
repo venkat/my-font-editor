@@ -1251,8 +1251,13 @@ drawSVG.addEventListener('touchmove',e=>{
     }
   }
 
+  // Track hover dot but DON'T call renderCanvas() on touch - it breaks iOS touch tracking
   const d = nearDot(p.x, p.y);
-  if (!dotEq(d, hoverDot)) { hoverDot = d; renderCanvas(); }
+  if (!dotEq(d, hoverDot)) {
+    hoverDot = d;
+    // Only render on mouse, not touch - touch devices don't need hover preview
+    if (!touchModeActive) renderCanvas();
+  }
 },{passive:false});
 
 // Handle touch cancel - iOS may cancel touches
