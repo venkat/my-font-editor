@@ -19,22 +19,49 @@ const SNAP=22;
 
 // ═══════════════════════════════════════════════════════
 // TOUCH DEVICE DETECTION & ADAPTIVE THRESHOLDS
-// Fingers are ~40-50px, mice are ~1px precise
+// Fingers are ~44-57px, mice are ~1px precise
 // ═══════════════════════════════════════════════════════
-const IS_TOUCH_DEVICE = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-const TOUCH_SCALE = IS_TOUCH_DEVICE ? 2.0 : 1.0;  // 2x larger thresholds for touch
+// Multiple detection methods for reliability across browsers
+const IS_TOUCH_DEVICE = (
+  ('ontouchstart' in window) ||
+  (navigator.maxTouchPoints > 0) ||
+  (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+  /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+);
 
-// Adaptive thresholds - scale up for touch devices
-const SNAP_TOUCH = Math.round(SNAP * TOUCH_SCALE);              // 22 → 44px on touch
-const TAP_THRESH = IS_TOUCH_DEVICE ? 18 : 10;                   // 10 → 18px on touch
-const ENDPOINT_RADIUS = IS_TOUCH_DEVICE ? 28 : 15;              // 15 → 28px on touch
-const STROKE_MID_THRESH = IS_TOUCH_DEVICE ? 24 : 12;            // 12 → 24px on touch
-const STROKE_HOVER_PAD = IS_TOUCH_DEVICE ? 18 : 8;              // +8 → +18px on touch
-const CURVE_LIMIT = IS_TOUCH_DEVICE ? SP * 2.2 : SP * 1.5;      // ~47 → ~68px on touch
+// Dynamic touch mode - can be upgraded on first touch event
+let touchModeActive = IS_TOUCH_DEVICE;
+
+// Threshold getter functions - recalculate based on current touchModeActive
+const getSnapTouch = () => touchModeActive ? 55 : SNAP;           // 22 → 55px on touch
+const getTapThresh = () => touchModeActive ? 25 : 10;             // 10 → 25px on touch
+const getEndpointRadius = () => touchModeActive ? 40 : 15;        // 15 → 40px on touch
+const getStrokeMidThresh = () => touchModeActive ? 35 : 12;       // 12 → 35px on touch
+const getStrokeHoverPad = () => touchModeActive ? 25 : 8;         // 8 → 25px on touch
+const getCurveLimit = () => touchModeActive ? SP * 2.5 : SP * 1.5;// ~47 → ~77px on touch
 
 // Visual scaling for touch - larger dots are easier to see and target
-const DOT_EP_VIS = IS_TOUCH_DEVICE ? Math.round(DOT_EP * 1.4) : DOT_EP;  // 9 → 13px on touch
-const DOT_HV_VIS = IS_TOUCH_DEVICE ? Math.round(DOT_HV * 1.3) : DOT_HV;  // 11 → 14px on touch
+const getDotEpVis = () => touchModeActive ? Math.round(DOT_EP * 1.6) : DOT_EP;  // 9 → 14px on touch
+const getDotHvVis = () => touchModeActive ? Math.round(DOT_HV * 1.5) : DOT_HV;  // 11 → 16px on touch
+
+// Legacy constants for backward compatibility (use getters in new code)
+const SNAP_TOUCH = IS_TOUCH_DEVICE ? 55 : SNAP;
+const TAP_THRESH = IS_TOUCH_DEVICE ? 25 : 10;
+const ENDPOINT_RADIUS = IS_TOUCH_DEVICE ? 40 : 15;
+const STROKE_MID_THRESH = IS_TOUCH_DEVICE ? 35 : 12;
+const STROKE_HOVER_PAD = IS_TOUCH_DEVICE ? 25 : 8;
+const CURVE_LIMIT = IS_TOUCH_DEVICE ? SP * 2.5 : SP * 1.5;
+const DOT_EP_VIS = IS_TOUCH_DEVICE ? Math.round(DOT_EP * 1.6) : DOT_EP;
+const DOT_HV_VIS = IS_TOUCH_DEVICE ? Math.round(DOT_HV * 1.5) : DOT_HV;
+
+// Activate touch mode dynamically on first touch (catches edge cases)
+function activateTouchMode() {
+  if (!touchModeActive) {
+    touchModeActive = true;
+    console.log('Touch mode activated');
+    renderCanvas(); // Re-render with larger dots
+  }
+}
 const UPM=1000;
 const CAP_PX = (ROW_BASE-ROW_CAP)*SP; // 320
 const CAP_U  = 700;
@@ -222,7 +249,7 @@ let expHover      = null;          // What we're hovering over for visual feedba
 // Tap-to-select state (smart interaction mode)
 let expSelected   = null;          // { type: 'stroke'|'dot', strokeIdx, endpoint?, x?, y? }
 let pressStart    = null;          // { x, y, time } for tap detection
-// TAP_THRESH defined above with adaptive thresholds (10px desktop, 18px touch)
+// getTapThresh() returns adaptive threshold (10px desktop, 25px touch)
 const TAP_TIME_LIMIT = 300;        // Max time in ms to count as tap
 
 // Guard against duplicate touch/mouse events (some devices fire both)
@@ -272,7 +299,7 @@ function allDots() {
   return d;
 }
 function nearDot(px,py) {
-  let best=null,bd=SNAP_TOUCH;  // Use adaptive threshold (22px desktop, 44px touch)
+  let best=null,bd=getSnapTouch();  // Dynamic threshold (22px desktop, 55px touch)
   for(const d of allDots()){const v=Math.hypot(d.x-px,d.y-py);if(v<bd){bd=v;best=d;}}
   return best;
 }
@@ -307,7 +334,8 @@ function nearStroke(px,py) {
 // EXPERIMENTAL: HIT DETECTION FOR DOT MOVEMENT & CURVES
 // ═══════════════════════════════════════════════════════
 // Find stroke endpoint (purple dot) near cursor
-function findEndpointAt(px, py, radius = ENDPOINT_RADIUS) {  // 15px desktop, 28px touch
+function findEndpointAt(px, py, radiusOverride) {
+  const radius = radiusOverride ?? getEndpointRadius();  // 15px desktop, 40px touch
   if (!SMART_MODE) return null;
   const ss = getActStrokes();
   for (let i = 0; i < ss.length; i++) {
@@ -325,7 +353,8 @@ function findEndpointAt(px, py, radius = ENDPOINT_RADIUS) {  // 15px desktop, 28
 }
 
 // Find stroke for bending - detects clicks on the stroke itself (excludes endpoints)
-function findStrokeMidAt(px, py, threshold = STROKE_MID_THRESH) {  // 12px desktop, 24px touch
+function findStrokeMidAt(px, py, thresholdOverride) {
+  const threshold = thresholdOverride ?? getStrokeMidThresh();  // 12px desktop, 35px touch
   if (!SMART_MODE) return null;
   const ss = getActStrokes();
   for (let i = ss.length - 1; i >= 0; i--) {
@@ -1050,7 +1079,7 @@ drawSVG.addEventListener('mouseup',e=>{
   if (SMART_MODE && tool === 'draw' && pressStart) {
     const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
     const duration = Date.now() - pressStart.time;
-    const wasTap = dist < TAP_THRESH && duration < TAP_TIME_LIMIT;
+    const wasTap = dist < getTapThresh() && duration < TAP_TIME_LIMIT;
 
     if (wasTap) {
       // Tap detected - select element or deselect
@@ -1119,6 +1148,7 @@ drawSVG.addEventListener('mouseleave',()=>{
 // Touch events - same logic as mouse
 drawSVG.addEventListener('touchstart',e=>{
   e.preventDefault();
+  activateTouchMode();  // Ensure touch mode is active (catches edge cases)
   lastTouchTime = Date.now();  // Guard against duplicate mouse events
   const p = svgPt(e.touches[0]);
 
@@ -1208,7 +1238,7 @@ drawSVG.addEventListener('touchend',e=>{
   if (SMART_MODE && tool === 'draw' && pressStart) {
     const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
     const duration = Date.now() - pressStart.time;
-    if (dist < TAP_THRESH && duration < TAP_TIME_LIMIT) {
+    if (dist < getTapThresh() && duration < TAP_TIME_LIMIT) {
       // CRITICAL: Use pressStart (touchstart) position for hit detection, not p (touchend)
       // Finger is most accurately positioned at moment of contact, not when lifting
       const endpoint = findEndpointAt(pressStart.x, pressStart.y);
