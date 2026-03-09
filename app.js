@@ -908,7 +908,9 @@ function isOnSelectedStroke(px, py) {
   const ss = getActStrokes();
   const s = ss[expSelected.strokeIdx];
   if (!s) return false;
-  const threshold = (s.w || 11) / 2 + 12;
+  // Use adaptive threshold for touch devices
+  const baseThreshold = (s.w || 11) / 2 + 12;
+  const threshold = touchModeActive ? baseThreshold + 20 : baseThreshold;  // Larger hit zone on touch
   // Sample along stroke
   if (s.curved && s.cx !== undefined) {
     for (let t = 0; t <= 1; t += 0.05) {
@@ -929,7 +931,8 @@ function isOnSelectedStroke(px, py) {
 // Helper: Check if click is on a selected dot
 function isOnSelectedDot(px, py) {
   if (!expSelected || expSelected.type !== 'dot') return false;
-  return Math.hypot(px - expSelected.x, py - expSelected.y) < ENDPOINT_RADIUS;  // 15px desktop, 28px touch
+  // Use dynamic getter for touch-adaptive threshold
+  return Math.hypot(px - expSelected.x, py - expSelected.y) < getEndpointRadius();  // 15px desktop, 40px touch
 }
 
 // Helper: Clear selection
