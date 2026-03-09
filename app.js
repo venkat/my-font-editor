@@ -33,11 +33,12 @@ const IS_TOUCH_DEVICE = (
 let touchModeActive = IS_TOUCH_DEVICE;
 
 // Threshold getter functions - recalculate based on current touchModeActive
+// Touch thresholds are MUCH larger because fingers are 44-57px wide and imprecise
 const getSnapTouch = () => touchModeActive ? 55 : SNAP;           // 22 → 55px on touch
-const getTapThresh = () => touchModeActive ? 25 : 10;             // 10 → 25px on touch
-const getEndpointRadius = () => touchModeActive ? 40 : 15;        // 15 → 40px on touch
-const getStrokeMidThresh = () => touchModeActive ? 35 : 12;       // 12 → 35px on touch
-const getStrokeHoverPad = () => touchModeActive ? 25 : 8;         // 8 → 25px on touch
+const getTapThresh = () => touchModeActive ? 40 : 10;             // 10 → 40px on touch (fingers move during tap)
+const getEndpointRadius = () => touchModeActive ? 50 : 15;        // 15 → 50px on touch (generous hit zone)
+const getStrokeMidThresh = () => touchModeActive ? 45 : 12;       // 12 → 45px on touch (easier stroke selection)
+const getStrokeHoverPad = () => touchModeActive ? 30 : 8;         // 8 → 30px on touch
 const getCurveLimit = () => touchModeActive ? SP * 2.5 : SP * 1.5;// ~47 → ~77px on touch
 
 // Visual scaling for touch - larger dots are easier to see and target
@@ -908,9 +909,9 @@ function isOnSelectedStroke(px, py) {
   const ss = getActStrokes();
   const s = ss[expSelected.strokeIdx];
   if (!s) return false;
-  // Use adaptive threshold for touch devices
+  // Use adaptive threshold for touch devices - fingers need much larger hit zones
   const baseThreshold = (s.w || 11) / 2 + 12;
-  const threshold = touchModeActive ? baseThreshold + 20 : baseThreshold;  // Larger hit zone on touch
+  const threshold = touchModeActive ? baseThreshold + 35 : baseThreshold;  // ~50px on touch vs ~18px on desktop
   // Sample along stroke
   if (s.curved && s.cx !== undefined) {
     for (let t = 0; t <= 1; t += 0.05) {
@@ -1224,19 +1225,20 @@ drawSVG.addEventListener('touchstart',e=>{
       return;
     }
 
-    // If tapping on stroke middle (not at any grid dot), don't start drawing
-    // But if there's a grid dot nearby (endpoint OR regular grid dot), allow drawing from it.
-    // touchend will decide if it was a tap (select) or drag (draw line).
+    // TOUCH-SPECIFIC: On touch devices, prioritize stroke selection over drawing
+    // when tapping on a stroke, even if there's a grid dot nearby.
+    // This is different from desktop where precise clicks can distinguish between
+    // "click on stroke" vs "click on grid dot that happens to be on stroke".
     const strokeMid = findStrokeMidAt(p.x, p.y);
     const endpoint = findEndpointAt(p.x, p.y);
-    const gridDot = nearDot(p.x, p.y);
 
-    // Only block if on stroke middle AND NOT at an endpoint AND NOT at a grid dot
-    if (strokeMid && !endpoint && !gridDot) {
-      dbg('[TOUCHSTART] Found stroke middle (no dot), will select on touchend');
+    // On touch: if we find a stroke middle (and not an endpoint), always prepare for selection
+    // The touchend handler will decide if it was a tap (select) or drag (draw line)
+    if (strokeMid && !endpoint) {
+      dbg('[TOUCHSTART] Found stroke middle, will select on touchend (touch mode)');
       return;
     }
-    // For dots (endpoint or grid): continue to set up drawing, touchend will decide tap vs drag
+    // For endpoints: continue to set up drawing, touchend will decide tap vs drag
   }
 
   const d = nearDot(p.x, p.y);
