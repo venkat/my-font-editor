@@ -989,17 +989,21 @@ drawSVG.addEventListener('mousedown',e=>{
     }
   }
 
-  // In SMART_MODE, if tapping on a stroke middle (not an endpoint), DON'T start drawing.
-  // But endpoints ARE valid drawing start points, so don't block those.
+  // In SMART_MODE, if tapping on a stroke middle (not at any grid dot), DON'T start drawing.
+  // But if there's a grid dot nearby (endpoint OR regular grid dot), allow drawing from it.
   // mouseup will decide if it was a tap (select) or drag (draw line).
   if (SMART_MODE) {
     const strokeMid = findStrokeMidAt(p.x, p.y);
     const endpoint = findEndpointAt(p.x, p.y);
-    if (strokeMid && !endpoint) {
-      // Stroke middle but not at endpoint - can't draw from here, let mouseup select
+    const gridDot = nearDot(p.x, p.y);
+
+    // Only block if on stroke middle AND NOT at an endpoint AND NOT at a grid dot
+    // This allows drawing from any grid point, even if a stroke passes through it
+    if (strokeMid && !endpoint && !gridDot) {
+      // On stroke but not near any dot - select the stroke, don't draw
       return;
     }
-    // For endpoints: continue to set up drawing, mouseup will decide tap vs drag
+    // For dots (endpoint or grid): continue to set up drawing, mouseup will decide tap vs drag
   }
 
   // Start drawing from a dot (will determine if tap or drag on mouseup)
@@ -1217,16 +1221,19 @@ drawSVG.addEventListener('touchstart',e=>{
       return;
     }
 
-    // If tapping on stroke middle (not an endpoint), don't start drawing
-    // But endpoints ARE valid drawing start points, so don't block those.
+    // If tapping on stroke middle (not at any grid dot), don't start drawing
+    // But if there's a grid dot nearby (endpoint OR regular grid dot), allow drawing from it.
     // touchend will decide if it was a tap (select) or drag (draw line).
     const strokeMid = findStrokeMidAt(p.x, p.y);
     const endpoint = findEndpointAt(p.x, p.y);
-    if (strokeMid && !endpoint) {
-      dbg('[TOUCHSTART] Found stroke middle, will select on touchend');
+    const gridDot = nearDot(p.x, p.y);
+
+    // Only block if on stroke middle AND NOT at an endpoint AND NOT at a grid dot
+    if (strokeMid && !endpoint && !gridDot) {
+      dbg('[TOUCHSTART] Found stroke middle (no dot), will select on touchend');
       return;
     }
-    // For endpoints: continue to set up drawing, touchend will decide tap vs drag
+    // For dots (endpoint or grid): continue to set up drawing, touchend will decide tap vs drag
   }
 
   const d = nearDot(p.x, p.y);
