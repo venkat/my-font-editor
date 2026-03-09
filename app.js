@@ -1225,20 +1225,20 @@ drawSVG.addEventListener('touchstart',e=>{
       return;
     }
 
-    // TOUCH-SPECIFIC: On touch devices, prioritize stroke selection over drawing
-    // when tapping on a stroke, even if there's a grid dot nearby.
-    // This is different from desktop where precise clicks can distinguish between
-    // "click on stroke" vs "click on grid dot that happens to be on stroke".
+    // Check what's under the finger: stroke middle, endpoint, and/or grid dot
     const strokeMid = findStrokeMidAt(p.x, p.y);
     const endpoint = findEndpointAt(p.x, p.y);
+    const gridDot = nearDot(p.x, p.y);
 
-    // On touch: if we find a stroke middle (and not an endpoint), always prepare for selection
-    // The touchend handler will decide if it was a tap (select) or drag (draw line)
-    if (strokeMid && !endpoint) {
-      dbg('[TOUCHSTART] Found stroke middle, will select on touchend (touch mode)');
+    // If on stroke middle with NO grid dot nearby, block drawing (will select on touchend)
+    // If there IS a grid dot, allow drawing setup - touchend will decide tap vs drag:
+    //   - If tap (small movement): select the stroke
+    //   - If drag: draw a line from the grid dot
+    if (strokeMid && !endpoint && !gridDot) {
+      dbg('[TOUCHSTART] Found stroke middle (no dot), will select on touchend');
       return;
     }
-    // For endpoints: continue to set up drawing, touchend will decide tap vs drag
+    // Continue to set up potential drawing - touchend decides tap (select) vs drag (draw)
   }
 
   const d = nearDot(p.x, p.y);
