@@ -1,15 +1,19 @@
 /**
  * End-to-end tests for drawing functionality
  *
- * These tests run in a browser environment (via Vitest with jsdom or browser mode)
- * and simulate user interactions to verify drawing works correctly.
+ * CRITICAL: These tests must model the FULL decision logic from app.js.
+ * The shouldBlockDrawing() function takes 3 parameters: strokeMid, endpoint, gridDot.
+ * All 3 must be tested to catch all edge cases.
  *
  * Test scenarios to prevent regressions:
  * 1. Drawing from grey dots (basic functionality)
- * 2. Drawing from purple endpoint dots (regression from e95f200)
+ * 2. Drawing from purple endpoint dots (regression V1 from e95f200)
  * 3. Drawing from grid dots that strokes pass through (regression V2)
- * 4. Tap-to-select on stroke middles (should NOT start drawing)
- * 5. Touch device interactions
+ * 4. Tap-to-select on stroke middles with NO nearby dot (should select, not draw)
+ * 5. Touch device interactions (same logic, different thresholds)
+ *
+ * The key insight: ANY grid dot is a valid drawing start point, even if
+ * a stroke passes through it. Only block when on stroke with NO nearby dot.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';

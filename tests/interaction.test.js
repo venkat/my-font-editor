@@ -1,15 +1,22 @@
 /**
  * Tests for interaction logic - specifically drawing start conditions
  *
- * These tests verify the fix for the regression where drawing could not
- * start from purple endpoint dots.
+ * CRITICAL LESSON: Tests must model the FULL decision logic, not a simplified version.
+ * The real code checks: strokeMid, endpoint, AND gridDot (3 parameters).
+ * Tests that only check 2 parameters will miss edge cases.
  *
- * Bug introduced: commit e95f200
- * Root cause: The condition `strokeMid || endpoint` blocked drawing from
- * ALL endpoints, when it should only block drawing from stroke middles.
+ * Bug history:
+ * - V1 (commit e95f200): `strokeMid || endpoint` blocked ALL endpoints
+ * - V2: `strokeMid && !endpoint` blocked grid dots on strokes
+ * - Fix: `strokeMid && !endpoint && !gridDot` - only block when NO dot nearby
  *
- * Fix: Changed to `strokeMid && !endpoint` - only block if on stroke middle
- * but NOT at an endpoint. Endpoints are valid drawing start points.
+ * Valid drawing start points:
+ * - Grey dots (no stroke nearby)
+ * - Purple endpoint dots
+ * - Grid dots that strokes pass through (e.g., middle of crossbar on "A")
+ *
+ * Invalid drawing start point:
+ * - Stroke middle with no nearby grid dot (select stroke instead)
  */
 
 import { describe, it, expect } from 'vitest';

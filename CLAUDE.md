@@ -25,7 +25,7 @@ npm run build
 
 - **Modular structure**: Source code in `src/`, tests in `tests/`
 - **Build system**: Vite for development and production builds
-- **Testing**: Vitest for unit tests (68 tests)
+- **Testing**: Vitest for unit tests (76 tests)
 - **CI/CD**: GitHub Actions runs tests before deployment
 - **Autosave**: Uses localStorage with key `fontMkr8`
 
@@ -99,13 +99,26 @@ Tests must pass before deployment (enforced by CI).
 **Key insight**: Touch fixes can break desktop, and vice versa. The interaction handlers share logic.
 
 **Testing strategy**:
-1. **Extract decision logic into testable functions** - The `shouldBlockDrawing(strokeMid, endpoint)` logic is tested separately from DOM/event handling
+1. **Test the FULL decision logic** - The real code checks 3 things: `strokeMid`, `endpoint`, AND `gridDot`. Tests must check ALL parameters.
 2. **Test invariants, not implementation** - Tests verify "purple endpoints are valid drawing start points" rather than testing specific code paths
-3. **Document scenarios as tests** - Each user interaction (tap, drag, from grey dot, from endpoint) has a corresponding test
+3. **Document scenarios as tests** - Each user interaction (tap, drag, from grey dot, from endpoint, from grid dot on stroke) has a corresponding test
+
+**CRITICAL: Don't simplify test models**
+```javascript
+// WRONG - simplified model misses cases:
+shouldBlockDrawing(strokeMid, endpoint)  // Only 2 params!
+
+// CORRECT - matches actual code:
+shouldBlockDrawing(strokeMid, endpoint, gridDot)  // All 3 params
+```
 
 **Before deploying touch fixes**:
 1. Run `npm test` to check all scenarios
-2. Test desktop in browser (draw from grey dot, draw from endpoint, tap to select)
+2. Test desktop in browser:
+   - Draw from grey dot
+   - Draw from purple endpoint
+   - Draw from grid dot that a stroke passes through
+   - Tap to select stroke
 3. Test on real iOS device (not just simulator)
 
 **Regression-prone areas**:
@@ -203,16 +216,28 @@ This app supports touch interactions on iOS Safari. Key learnings from debugging
 3. If touching grid dot OR endpoint → start line drawing
 ```
 
-**Critical bug pattern (commit e95f200)**:
+**Critical bug patterns (drawing start logic)**:
+
 ```javascript
-// WRONG - blocks drawing from endpoints:
+// BUG V1 (commit e95f200) - blocks drawing from endpoints:
 if (strokeMid || endpoint) return;
 
-// CORRECT - only block stroke middles that aren't endpoints:
+// BUG V2 - blocks drawing from grid dots on strokes:
 if (strokeMid && !endpoint) return;
+
+// CORRECT - only block when NO dot nearby:
+if (strokeMid && !endpoint && !gridDot) return;
 ```
 
-The difference: endpoints ARE valid drawing start points. Only stroke middles (where there's no dot) should block drawing.
+**The rule**: Drawing can start from ANY grid dot (grey, purple endpoint, or grid dot that a stroke passes through). Only block when clicking on a stroke with NO nearby grid dot.
+
+**Valid drawing start points**:
+- Grey dots (no stroke) ✓
+- Purple endpoint dots ✓
+- Grid dots that strokes pass through ✓
+
+**Invalid drawing start point**:
+- Stroke middle with no nearby grid dot (→ select stroke instead)
 
 ### Key Thresholds
 
@@ -222,6 +247,18 @@ The difference: endpoints ARE valid drawing start points. Only stroke middles (w
 | TAP_THRESH | 10px | 25px | Tap vs drag detection |
 | ENDPOINT_RADIUS | 15px | 40px | Endpoint dot hit zone |
 | STROKE_MID_THRESH | 12px | 35px | Stroke middle hit zone |
+
+### Common Testing Mistakes to Avoid
+
+1. **Simplified test models** - If the real code checks 3 conditions, tests must check all 3. Don't reduce `(A && B && C)` to `(A && B)` in tests.
+
+2. **Missing edge cases** - Always test the "both" cases:
+   - On stroke AND on grid dot → should allow drawing
+   - On stroke AND on endpoint → should allow drawing
+
+3. **Not testing after fixes** - After fixing a touch bug, always verify desktop still works (and vice versa).
+
+4. **Testing in wrong environment** - Puppeteer uses Chromium, not Safari. It won't catch iOS-specific bugs.
 
 ### Debug Pattern for Touch Issues
 
