@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "start": "vite"
+    "start": "vite",
+    "prepare": "cp hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push || true"
   },
   "keywords": ["font", "editor", "opentype", "typography"],
   "license": "MIT",

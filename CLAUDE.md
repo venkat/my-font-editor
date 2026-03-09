@@ -146,7 +146,24 @@ Specialized agents for complex tasks (invoke via Task tool):
 - **Hosting**: GitHub Pages via GitHub Actions
 - **Workflow**: `.github/workflows/deploy.yml`
 - **Process**: Push to `main` → Tests run → Build → Deploy
-- Tests must pass for deployment to proceed
+
+### MANDATORY: Run Tests Before Every Commit
+
+**CRITICAL RULE FOR CLAUDE**: Before EVERY `git commit`, you MUST:
+
+1. Run `npm test` and verify ALL tests pass
+2. If tests fail, fix the issue before committing
+3. NEVER commit with failing tests
+
+```bash
+# Always run before committing:
+npm test && git commit -m "..."
+```
+
+This is enforced by:
+- Git pre-push hook (blocks push if tests fail)
+- GitHub Actions CI (blocks deployment if tests fail)
+- This instruction file (you must follow it)
 
 ## Code Style
 
