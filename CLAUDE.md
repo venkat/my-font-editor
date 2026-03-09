@@ -25,7 +25,7 @@ npm run build
 
 - **Modular structure**: Source code in `src/`, tests in `tests/`
 - **Build system**: Vite for development and production builds
-- **Testing**: Vitest for unit tests (36 tests)
+- **Testing**: Vitest for unit tests (68 tests)
 - **CI/CD**: GitHub Actions runs tests before deployment
 - **Autosave**: Uses localStorage with key `fontMkr8`
 
@@ -73,7 +73,7 @@ The drawing grid mirrors Brutalita's 5x12 coordinate system:
 
 ## Testing
 
-Unit tests cover pure utility functions:
+Unit tests cover pure utility functions and interaction logic:
 
 ```bash
 # Run all tests
@@ -84,6 +84,34 @@ npm run test:watch
 ```
 
 Tests must pass before deployment (enforced by CI).
+
+### Test Coverage by Area
+
+| Area | Test File | Description |
+|------|-----------|-------------|
+| Geometry | `tests/geometry.test.js` | Distance, snapping, bezier curves |
+| Default Font | `tests/defaultFont.test.js` | Font data validation |
+| Interaction Logic | `tests/interaction.test.js` | Drawing decision logic |
+| E2E Scenarios | `tests/e2e/drawing.test.js` | User interaction scenarios |
+
+### Preventing Touch/Desktop Regressions
+
+**Key insight**: Touch fixes can break desktop, and vice versa. The interaction handlers share logic.
+
+**Testing strategy**:
+1. **Extract decision logic into testable functions** - The `shouldBlockDrawing(strokeMid, endpoint)` logic is tested separately from DOM/event handling
+2. **Test invariants, not implementation** - Tests verify "purple endpoints are valid drawing start points" rather than testing specific code paths
+3. **Document scenarios as tests** - Each user interaction (tap, drag, from grey dot, from endpoint) has a corresponding test
+
+**Before deploying touch fixes**:
+1. Run `npm test` to check all scenarios
+2. Test desktop in browser (draw from grey dot, draw from endpoint, tap to select)
+3. Test on real iOS device (not just simulator)
+
+**Regression-prone areas**:
+- `mousedown`/`touchstart` early returns - changing when to return early affects both platforms
+- Hit detection order - checking stroke vs endpoint vs grid dot in wrong order breaks selection
+- `renderCanvas()` calls - calling it during touch events breaks iOS
 
 ## Skills (Slash Commands)
 
@@ -152,11 +180,22 @@ This app supports touch interactions on iOS Safari. Key learnings from debugging
 ### Touch Detection Priority (SMART_MODE)
 
 ```javascript
-// In touchstart, check in this order:
+// In touchstart/mousedown, check in this order:
 1. If selected item exists and touched → start dragging it
-2. If touching stroke/endpoint → return (let touchend handle selection)
-3. If touching grid dot → start line drawing
+2. If touching stroke middle (NOT endpoint) → return (let touchend select)
+3. If touching grid dot OR endpoint → start line drawing
 ```
+
+**Critical bug pattern (commit e95f200)**:
+```javascript
+// WRONG - blocks drawing from endpoints:
+if (strokeMid || endpoint) return;
+
+// CORRECT - only block stroke middles that aren't endpoints:
+if (strokeMid && !endpoint) return;
+```
+
+The difference: endpoints ARE valid drawing start points. Only stroke middles (where there's no dot) should block drawing.
 
 ### Key Thresholds
 
