@@ -989,15 +989,17 @@ drawSVG.addEventListener('mousedown',e=>{
     }
   }
 
-  // In SMART_MODE, if tapping on a stroke middle or endpoint, DON'T start drawing.
-  // Let mouseup handle the tap-to-select logic.
+  // In SMART_MODE, if tapping on a stroke middle (not an endpoint), DON'T start drawing.
+  // But endpoints ARE valid drawing start points, so don't block those.
+  // mouseup will decide if it was a tap (select) or drag (draw line).
   if (SMART_MODE) {
     const strokeMid = findStrokeMidAt(p.x, p.y);
     const endpoint = findEndpointAt(p.x, p.y);
-    if (strokeMid || endpoint) {
-      // Don't start drawing - mouseup will select this stroke/endpoint
+    if (strokeMid && !endpoint) {
+      // Stroke middle but not at endpoint - can't draw from here, let mouseup select
       return;
     }
+    // For endpoints: continue to set up drawing, mouseup will decide tap vs drag
   }
 
   // Start drawing from a dot (will determine if tap or drag on mouseup)
@@ -1215,13 +1217,16 @@ drawSVG.addEventListener('touchstart',e=>{
       return;
     }
 
-    // If tapping on a stroke/endpoint, don't start drawing - let touchend handle selection
+    // If tapping on stroke middle (not an endpoint), don't start drawing
+    // But endpoints ARE valid drawing start points, so don't block those.
+    // touchend will decide if it was a tap (select) or drag (draw line).
     const strokeMid = findStrokeMidAt(p.x, p.y);
     const endpoint = findEndpointAt(p.x, p.y);
-    if (strokeMid || endpoint) {
-      dbg('[TOUCHSTART] Found stroke/endpoint, will select on touchend', { strokeMid: !!strokeMid, endpoint: !!endpoint });
+    if (strokeMid && !endpoint) {
+      dbg('[TOUCHSTART] Found stroke middle, will select on touchend');
       return;
     }
+    // For endpoints: continue to set up drawing, touchend will decide tap vs drag
   }
 
   const d = nearDot(p.x, p.y);
