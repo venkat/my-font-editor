@@ -385,35 +385,47 @@ function findEndpointAt(px, py, radiusOverride) {
   const radius = radiusOverride ?? getEndpointRadius();  // 15px desktop, 40px touch
   if (!SMART_MODE) return null;
   const ss = getActStrokes();
+  let closest = null;
+  let closestDist = Infinity;
   for (let i = 0; i < ss.length; i++) {
     const s = ss[i];
     // Check start point
-    if (Math.hypot(s.x1 - px, s.y1 - py) < radius) {
-      return { strokeIdx: i, endpoint: 'start', x: s.x1, y: s.y1 };
+    const distStart = Math.hypot(s.x1 - px, s.y1 - py);
+    if (distStart < radius && distStart < closestDist) {
+      closestDist = distStart;
+      closest = { strokeIdx: i, endpoint: 'start', x: s.x1, y: s.y1, dist: distStart };
     }
     // Check end point
-    if (Math.hypot(s.x2 - px, s.y2 - py) < radius) {
-      return { strokeIdx: i, endpoint: 'end', x: s.x2, y: s.y2 };
+    const distEnd = Math.hypot(s.x2 - px, s.y2 - py);
+    if (distEnd < radius && distEnd < closestDist) {
+      closestDist = distEnd;
+      closest = { strokeIdx: i, endpoint: 'end', x: s.x2, y: s.y2, dist: distEnd };
     }
   }
-  return null;
+  return closest;
 }
 
 // Find stroke for bending - detects clicks on the stroke itself (excludes endpoints)
+// For short strokes, uses relaxed endpoint exclusion
 function findStrokeMidAt(px, py, thresholdOverride) {
   const threshold = thresholdOverride ?? getStrokeMidThresh();  // 12px desktop, 35px touch
   if (!SMART_MODE) return null;
   const ss = getActStrokes();
   for (let i = ss.length - 1; i >= 0; i--) {
     const s = ss[i];
-    // Check distance from endpoints first - must not be too close
+    const strokeLen = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+
+    // For short strokes (less than 2x threshold), use relaxed endpoint exclusion
+    const isShortStroke = strokeLen < threshold * 2;
+    const endpointExclusion = isShortStroke ? Math.min(threshold * 0.3, strokeLen * 0.2) : threshold;
+
+    // Check distance from endpoints
     const distStart = Math.hypot(s.x1 - px, s.y1 - py);
     const distEnd = Math.hypot(s.x2 - px, s.y2 - py);
-    if (distStart < threshold || distEnd < threshold) continue;
+    if (distStart < endpointExclusion || distEnd < endpointExclusion) continue;
 
     // For curved strokes: check if near the actual curve path
     if (s.curved && s.cx !== undefined) {
-      // Sample points along the curve and find closest
       let minDist = Infinity;
       for (let t = 0.1; t <= 0.9; t += 0.1) {
         const mt = 1 - t;
@@ -423,19 +435,19 @@ function findStrokeMidAt(px, py, thresholdOverride) {
         if (d < minDist) minDist = d;
       }
       if (minDist < threshold + (s.w || 11) / 2) {
-        return { strokeIdx: i, stroke: s };
+        return { strokeIdx: i, stroke: s, dist: minDist };
       }
     } else {
       // For straight strokes: check distance to line segment
       const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
       const lq = dx*dx + dy*dy;
       let t = lq > 0 ? ((px - s.x1)*dx + (py - s.y1)*dy) / lq : 0;
-      t = Math.max(0.1, Math.min(0.9, t)); // Exclude endpoints
+      t = Math.max(0, Math.min(1, t));
       const closestX = s.x1 + t * dx;
       const closestY = s.y1 + t * dy;
       const dist = Math.hypot(px - closestX, py - closestY);
       if (dist < threshold + (s.w || 11) / 2) {
-        return { strokeIdx: i, stroke: s };
+        return { strokeIdx: i, stroke: s, dist };
       }
     }
   }
@@ -947,14 +959,15 @@ function svgPt(e){
 }
 
 // Helper: Check if click is on a selected stroke
+// Uses VERY generous threshold for touch - item is already selected, no ambiguity
 function isOnSelectedStroke(px, py) {
   if (!expSelected || expSelected.type !== 'stroke') return false;
   const ss = getActStrokes();
   const s = ss[expSelected.strokeIdx];
   if (!s) return false;
-  // Use adaptive threshold for touch devices - fingers need much larger hit zones
+  // VERY generous threshold for already-selected items - 70px on touch
   const baseThreshold = (s.w || 11) / 2 + 12;
-  const threshold = touchModeActive ? baseThreshold + 35 : baseThreshold;  // ~50px on touch vs ~18px on desktop
+  const threshold = touchModeActive ? baseThreshold + 55 : baseThreshold;  // ~70px on touch vs ~18px on desktop
   // Sample along stroke
   if (s.curved && s.cx !== undefined) {
     for (let t = 0; t <= 1; t += 0.05) {
@@ -973,10 +986,12 @@ function isOnSelectedStroke(px, py) {
 }
 
 // Helper: Check if click is on a selected dot
+// Uses VERY generous threshold for touch - item is already selected, no ambiguity
 function isOnSelectedDot(px, py) {
   if (!expSelected || expSelected.type !== 'dot') return false;
-  // Use dynamic getter for touch-adaptive threshold
-  return Math.hypot(px - expSelected.x, py - expSelected.y) < getEndpointRadius();  // 15px desktop, 40px touch
+  // VERY generous threshold - 60px on touch vs 15px on desktop
+  const threshold = touchModeActive ? 60 : getEndpointRadius();
+  return Math.hypot(px - expSelected.x, py - expSelected.y) < threshold;
 }
 
 // Helper: Clear selection
@@ -1478,7 +1493,21 @@ drawSVG.addEventListener('touchend',e=>{
         const endpoint = findEndpointAt(pressStart.x, pressStart.y);
         const strokeMid = findStrokeMidAt(pressStart.x, pressStart.y);
 
-        if (endpoint) {
+        // When both are found, pick the closer one
+        let selectEndpoint = false;
+        let selectStroke = false;
+        if (endpoint && strokeMid) {
+          // Both found - compare distances, prefer stroke for short strokes
+          selectEndpoint = endpoint.dist < strokeMid.dist;
+          selectStroke = !selectEndpoint;
+          dbg('[TOUCHEND EDIT] Both found', { endpointDist: endpoint.dist, strokeDist: strokeMid.dist });
+        } else if (endpoint) {
+          selectEndpoint = true;
+        } else if (strokeMid) {
+          selectStroke = true;
+        }
+
+        if (selectEndpoint) {
           touchContext.selectedItem = {
             type: 'dot',
             strokeIdx: endpoint.strokeIdx,
@@ -1490,7 +1519,7 @@ drawSVG.addEventListener('touchend',e=>{
           expSelected = { ...touchContext.selectedItem };
           touchState = 'EDIT_SELECTED';
           dbg('[TOUCHEND EDIT] Selected DOT');
-        } else if (strokeMid) {
+        } else if (selectStroke) {
           touchContext.selectedItem = {
             type: 'stroke',
             strokeIdx: strokeMid.strokeIdx
