@@ -260,6 +260,49 @@ const TAP_TIME_LIMIT = 300;        // Max time in ms to count as tap
 let lastTouchTime = 0;
 const TOUCH_MOUSE_GUARD = 500;     // Ignore mouse events within 500ms of touch
 
+// ═══════════════════════════════════════════════════════════
+// TOUCH MODE: Explicit Draw/Edit toggle (touch devices only)
+// Desktop uses the existing SMART_MODE with ERASE button
+// ═══════════════════════════════════════════════════════════
+let touchAppMode = 'DRAW';  // 'DRAW' or 'EDIT' (touch devices only)
+let touchState = 'IDLE';    // 'IDLE', 'DRAW_PENDING', 'DRAWING', 'EDIT_SELECTED', 'EDIT_DRAGGING'
+let touchContext = { startDot: null, selectedItem: null, dragType: null };
+
+// Update toolbar UI to reflect current touch mode
+function updateTouchModeUI() {
+  const drawBtn = document.getElementById('td');
+  const editBtn = document.getElementById('tedit');
+  const trashBtn = document.getElementById('ttrash');
+  const canvasWrap = document.querySelector('.canvas-wrap');
+
+  if (!editBtn) return; // Not initialized yet
+
+  if (touchAppMode === 'DRAW') {
+    drawBtn.classList.add('active');
+    editBtn.classList.remove('active');
+    canvasWrap?.setAttribute('data-mode', 'draw');
+  } else {
+    drawBtn.classList.remove('active');
+    editBtn.classList.add('active');
+    canvasWrap?.setAttribute('data-mode', 'edit');
+  }
+
+  // Show/hide trash button based on selection in EDIT mode
+  if (touchAppMode === 'EDIT' && touchContext.selectedItem) {
+    trashBtn?.classList.add('visible');
+  } else {
+    trashBtn?.classList.remove('visible');
+  }
+}
+
+// Clear touch selection
+function clearTouchSelection() {
+  touchContext.selectedItem = null;
+  touchState = 'IDLE';
+  updateTouchModeUI();
+  renderCanvas();
+}
+
 // Load / initialise
 (function init() {
   try {
@@ -1187,68 +1230,93 @@ drawSVG.addEventListener('mouseleave',()=>{
 // Simple touch debug logging
 function dbg(msg) { console.log('[TOUCH]', typeof msg === 'object' ? JSON.stringify(msg) : msg); }
 
-// Touch events - same logic as mouse
+// Touch events - use explicit mode state machine for touch devices
 drawSVG.addEventListener('touchstart',e=>{
   e.preventDefault();
   activateTouchMode();
   lastTouchTime = Date.now();
 
   const p = svgPt(e.touches[0]);
-  dbg('[TOUCHSTART]', { x: Math.round(p.x), y: Math.round(p.y), expSelected: expSelected?.type || null });
+  dbg('[TOUCHSTART]', { mode: touchAppMode, x: Math.round(p.x), y: Math.round(p.y) });
 
-  if (tool === 'erase') {
-    const si = nearStroke(p.x, p.y);
-    if (si >= 0) { pushUndo(); getActStrokes().splice(si, 1); hoverSI = -1; renderCanvas(); }
+  // Record press start for all modes
+  pressStart = { x: p.x, y: p.y, time: Date.now() };
+
+  // ════════════════════════════════════════════════════════════
+  // DRAW MODE: Only look for grid dots, start stroke
+  // ════════════════════════════════════════════════════════════
+  if (touchAppMode === 'DRAW') {
+    const d = nearDot(p.x, p.y);
+    if (d) {
+      dbg('[TOUCHSTART DRAW] Starting line from dot', { col: d.c, row: d.r });
+      touchState = 'DRAW_PENDING';
+      touchContext.startDot = d;
+      dragging = true;
+      startDot = d;
+      hoverDot = d;
+      // NOTE: Do NOT call renderCanvas() here! It breaks iOS touch tracking.
+    } else {
+      dbg('[TOUCHSTART DRAW] No dot found, ignoring');
+      touchState = 'IDLE';
+    }
     return;
   }
 
-  pressStart = { x: p.x, y: p.y, time: Date.now() };
-
-  if (SMART_MODE) {
-    // If already selected, check if tapping on the selected item to start drag
-    if (expSelected && expSelected.type === 'stroke' && isOnSelectedStroke(p.x, p.y)) {
-      dbg('[TOUCHSTART] Starting curve drag on selected stroke');
-      pushUndo();
-      const ss = getActStrokes();
-      const s = ss[expSelected.strokeIdx];
-      if (s) {
-        expDragging = { type: 'curve', strokeIdx: expSelected.strokeIdx,
-          cx: s.curved ? s.cx : (s.x1 + s.x2) / 2, cy: s.curved ? s.cy : (s.y1 + s.y2) / 2 };
+  // ════════════════════════════════════════════════════════════
+  // EDIT MODE: Only look for existing elements to select/manipulate
+  // ════════════════════════════════════════════════════════════
+  if (touchAppMode === 'EDIT') {
+    // If we already have a selection, check if touching it to drag
+    if (touchContext.selectedItem) {
+      if (touchContext.selectedItem.type === 'stroke') {
+        // Check if touching the selected stroke to bend it
+        const ss = getActStrokes();
+        const s = ss[touchContext.selectedItem.strokeIdx];
+        if (s && isOnSelectedStroke(p.x, p.y)) {
+          dbg('[TOUCHSTART EDIT] Starting curve bend on selected stroke');
+          pushUndo();
+          touchState = 'EDIT_DRAGGING';
+          touchContext.dragType = 'curve';
+          expDragging = {
+            type: 'curve',
+            strokeIdx: touchContext.selectedItem.strokeIdx,
+            cx: s.curved ? s.cx : (s.x1 + s.x2) / 2,
+            cy: s.curved ? s.cy : (s.y1 + s.y2) / 2
+          };
+          return;
+        }
+      } else if (touchContext.selectedItem.type === 'dot') {
+        // Check if touching the selected dot to move it
+        if (isOnSelectedDot(p.x, p.y)) {
+          dbg('[TOUCHSTART EDIT] Starting dot move on selected dot');
+          pushUndo();
+          touchState = 'EDIT_DRAGGING';
+          touchContext.dragType = 'dot';
+          expDragging = {
+            type: 'dot',
+            strokeIdx: touchContext.selectedItem.strokeIdx,
+            endpoint: touchContext.selectedItem.endpoint,
+            startX: touchContext.selectedItem.x,
+            startY: touchContext.selectedItem.y
+          };
+          return;
+        }
       }
-      return;
-    }
-    if (expSelected && expSelected.type === 'dot' && isOnSelectedDot(p.x, p.y)) {
-      dbg('[TOUCHSTART] Starting dot drag on selected dot');
-      pushUndo();
-      expDragging = { type: 'dot', strokeIdx: expSelected.strokeIdx,
-        endpoint: expSelected.endpoint, startX: expSelected.x, startY: expSelected.y };
-      return;
     }
 
-    // Check what's under the finger: stroke middle, endpoint, and/or grid dot
-    const strokeMid = findStrokeMidAt(p.x, p.y);
+    // Not touching current selection - check for new selection
     const endpoint = findEndpointAt(p.x, p.y);
-    const gridDot = nearDot(p.x, p.y);
+    const strokeMid = findStrokeMidAt(p.x, p.y);
 
-    // If on stroke middle with NO grid dot nearby, block drawing (will select on touchend)
-    // If there IS a grid dot, allow drawing setup - touchend will decide tap vs drag:
-    //   - If tap (small movement): select the stroke
-    //   - If drag: draw a line from the grid dot
-    if (strokeMid && !endpoint && !gridDot) {
-      dbg('[TOUCHSTART] Found stroke middle (no dot), will select on touchend');
-      return;
+    if (endpoint || strokeMid) {
+      dbg('[TOUCHSTART EDIT] Found element to potentially select');
+      touchState = 'EDIT_PENDING';
+      // Will select on touchend if it was a tap
+    } else {
+      dbg('[TOUCHSTART EDIT] No element found, will deselect on tap');
+      touchState = 'EDIT_PENDING';
     }
-    // Continue to set up potential drawing - touchend decides tap (select) vs drag (draw)
-  }
-
-  const d = nearDot(p.x, p.y);
-  if (d) {
-    dbg('[TOUCHSTART] Starting line draw from dot', { col: d.c, row: d.r });
-    dragging = true; startDot = d; hoverDot = d;
-    // NOTE: Do NOT call renderCanvas() here! It rebuilds DOM and causes iOS
-    // to lose track of the touch, preventing touchend from firing.
-  } else {
-    dbg('[TOUCHSTART] No dot found');
+    return;
   }
 },{passive:false});
 
@@ -1257,18 +1325,52 @@ drawSVG.addEventListener('touchmove',e=>{
   lastTouchTime = Date.now();
   const p = svgPt(e.touches[0]);
 
-  if (SMART_MODE && expDragging) {
-    if (expDragging.type === 'curve') {
+  // ════════════════════════════════════════════════════════════
+  // DRAW MODE: Update preview line
+  // ════════════════════════════════════════════════════════════
+  if (touchAppMode === 'DRAW') {
+    if (touchState === 'DRAW_PENDING' || touchState === 'DRAWING') {
+      touchState = 'DRAWING';
+      const d = nearDot(p.x, p.y);
+      hoverDot = d;
+
+      // Update preview line directly (no DOM rebuild!)
+      if (touchContext.startDot && previewLine) {
+        const endX = d ? d.x : p.x;
+        const endY = d ? d.y : p.y;
+        if (touchContext.startDot.x !== endX || touchContext.startDot.y !== endY) {
+          sa(previewLine, {
+            x1: touchContext.startDot.x, y1: touchContext.startDot.y,
+            x2: endX, y2: endY,
+            'stroke-width': penWidth,
+            'display': 'block'
+          });
+        } else {
+          previewLine.setAttribute('display', 'none');
+        }
+      }
+    }
+    return;
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // EDIT MODE: Handle dragging (bend/move)
+  // ════════════════════════════════════════════════════════════
+  if (touchAppMode === 'EDIT' && touchState === 'EDIT_DRAGGING') {
+    if (expDragging?.type === 'curve') {
       const ss = getActStrokes();
       const s = ss[expDragging.strokeIdx];
       if (s) {
         const clamped = clampControlPoint(s.x1, s.y1, s.x2, s.y2, p.x, p.y);
-        s.curved = true; s.cx = clamped.cx; s.cy = clamped.cy;
+        s.curved = true;
+        s.cx = clamped.cx;
+        s.cy = clamped.cy;
         renderCanvas();
       }
       return;
     }
-    if (expDragging.type === 'dot') {
+
+    if (expDragging?.type === 'dot') {
       const snapped = snapToGrid(p.x, p.y);
       const ss = getActStrokes();
       const s = ss[expDragging.strokeIdx];
@@ -1279,34 +1381,18 @@ drawSVG.addEventListener('touchmove',e=>{
           if (stroke.x1 === oldX && stroke.y1 === oldY) { stroke.x1 = snapped.x; stroke.y1 = snapped.y; }
           if (stroke.x2 === oldX && stroke.y2 === oldY) { stroke.x2 = snapped.x; stroke.y2 = snapped.y; }
         });
-        expSelected.x = snapped.x; expSelected.y = snapped.y;
+        // Update selection position
+        if (touchContext.selectedItem) {
+          touchContext.selectedItem.x = snapped.x;
+          touchContext.selectedItem.y = snapped.y;
+        }
+        if (expSelected) {
+          expSelected.x = snapped.x;
+          expSelected.y = snapped.y;
+        }
         renderCanvas();
       }
       return;
-    }
-  }
-
-  // Track hover dot but DON'T call renderCanvas() on touch - it breaks iOS touch tracking
-  const d = nearDot(p.x, p.y);
-  if (!dotEq(d, hoverDot)) {
-    hoverDot = d;
-    // Only render on mouse, not touch - touch devices don't need hover preview
-    if (!touchModeActive) renderCanvas();
-  }
-
-  // Update preview line directly for touch drag feedback (no DOM rebuild!)
-  if (dragging && startDot && previewLine) {
-    const endX = d ? d.x : p.x;
-    const endY = d ? d.y : p.y;
-    if (startDot.x !== endX || startDot.y !== endY) {
-      sa(previewLine, {
-        x1: startDot.x, y1: startDot.y,
-        x2: endX, y2: endY,
-        'stroke-width': penWidth,
-        'display': 'block'
-      });
-    } else {
-      previewLine.setAttribute('display', 'none');
     }
   }
 },{passive:false});
@@ -1314,70 +1400,122 @@ drawSVG.addEventListener('touchmove',e=>{
 // Handle touch cancel - iOS may cancel touches
 drawSVG.addEventListener('touchcancel',e=>{
   dbg('[TOUCHCANCEL] iOS canceled the touch!');
+  // Reset all touch state
+  touchState = 'IDLE';
+  touchContext.startDot = null;
+  touchContext.dragType = null;
   dragging = false;
   startDot = null;
   pressStart = null;
   expDragging = null;
   if (previewLine) previewLine.setAttribute('display', 'none');
+  renderCanvas();
 },{passive:false});
 
 drawSVG.addEventListener('touchend',e=>{
   e.preventDefault();
   lastTouchTime = Date.now();
   const p = svgPt(e.changedTouches[0]);
-  dbg('[TOUCHEND]', { x: Math.round(p.x), y: Math.round(p.y), expDragging: expDragging?.type || null });
+  dbg('[TOUCHEND]', { mode: touchAppMode, state: touchState, x: Math.round(p.x), y: Math.round(p.y) });
 
-  if (SMART_MODE && expDragging) {
-    dbg('[TOUCHEND] Ending drag');
-    expDragging = null;
-    expSelected = null;
+  // ════════════════════════════════════════════════════════════
+  // DRAW MODE: Complete stroke or cancel
+  // ════════════════════════════════════════════════════════════
+  if (touchAppMode === 'DRAW') {
+    if (previewLine) previewLine.setAttribute('display', 'none');
+
+    if (touchState === 'DRAWING' || touchState === 'DRAW_PENDING') {
+      const d = nearDot(p.x, p.y);
+      if (d && touchContext.startDot && !dotEq(d, touchContext.startDot)) {
+        pushUndo();
+        if (!glyphs[curLetter]) glyphs[curLetter] = [];
+        glyphs[curLetter].push({
+          x1: touchContext.startDot.x, y1: touchContext.startDot.y,
+          x2: d.x, y2: d.y,
+          color: STROKE_COLOR, w: penWidth
+        });
+        dbg('[TOUCHEND DRAW] Line created', { from: `${touchContext.startDot.c},${touchContext.startDot.r}`, to: `${d.c},${d.r}` });
+      } else {
+        dbg('[TOUCHEND DRAW] No line created (same dot or no end dot)');
+      }
+    }
+
+    // Reset state
+    touchState = 'IDLE';
+    touchContext.startDot = null;
+    dragging = false;
+    startDot = null;
+    pressStart = null;
     renderCanvas();
     return;
   }
 
-  if (SMART_MODE && tool === 'draw' && pressStart) {
-    const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
-    const duration = Date.now() - pressStart.time;
-    const tapThresh = getTapThresh();
-    const wasTap = dist < tapThresh && duration < TAP_TIME_LIMIT;
-    dbg('[TOUCHEND] Tap check:', { dist: Math.round(dist), tapThresh, duration, wasTap });
-
-    if (wasTap) {
-      const endpoint = findEndpointAt(pressStart.x, pressStart.y);
-      const strokeMid = findStrokeMidAt(pressStart.x, pressStart.y);
-      dbg('[TOUCHEND] Selection:', { endpoint: !!endpoint, strokeMid: !!strokeMid });
-
-      if (endpoint) {
-        expSelected = { type: 'dot', strokeIdx: endpoint.strokeIdx,
-          endpoint: endpoint.endpoint, x: endpoint.x, y: endpoint.y };
-        dbg('[TOUCHEND] Selected DOT');
-      } else if (strokeMid) {
-        expSelected = { type: 'stroke', strokeIdx: strokeMid.strokeIdx };
-        dbg('[TOUCHEND] Selected STROKE');
-      } else {
-        expSelected = null;
-        dbg('[TOUCHEND] Nothing to select');
-      }
-      dragging = false; startDot = null; pressStart = null;
+  // ════════════════════════════════════════════════════════════
+  // EDIT MODE: Finish drag or select element
+  // ════════════════════════════════════════════════════════════
+  if (touchAppMode === 'EDIT') {
+    // Finish dragging
+    if (touchState === 'EDIT_DRAGGING') {
+      dbg('[TOUCHEND EDIT] Finishing drag');
+      expDragging = null;
+      touchState = 'EDIT_SELECTED';
+      touchContext.dragType = null;
+      // Keep selection active after drag
       renderCanvas();
       return;
     }
-  }
-  pressStart = null;
 
-  if (tool !== 'draw' || !dragging) return;
-  dragging = false;
-  if (previewLine) previewLine.setAttribute('display', 'none');  // Hide preview before final render
-  const d = nearDot(p.x, p.y);
-  if (d && !dotEq(d, startDot)) {
-    pushUndo();
-    if (!glyphs[curLetter]) glyphs[curLetter] = [];
-    glyphs[curLetter].push({x1:startDot.x, y1:startDot.y, x2:d.x, y2:d.y, color:STROKE_COLOR, w:penWidth});
-    dbg('[TOUCHEND] Line created', { from: `${startDot.c},${startDot.r}`, to: `${d.c},${d.r}` });
-    if (SMART_MODE) expSelected = null;
+    // Check if this was a tap (for selection)
+    if (touchState === 'EDIT_PENDING' && pressStart) {
+      const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
+      const duration = Date.now() - pressStart.time;
+      const tapThresh = getTapThresh();
+      const wasTap = dist < tapThresh && duration < TAP_TIME_LIMIT;
+      dbg('[TOUCHEND EDIT] Tap check:', { dist: Math.round(dist), tapThresh, wasTap });
+
+      if (wasTap) {
+        // Use pressStart position for accurate hit detection
+        const endpoint = findEndpointAt(pressStart.x, pressStart.y);
+        const strokeMid = findStrokeMidAt(pressStart.x, pressStart.y);
+
+        if (endpoint) {
+          touchContext.selectedItem = {
+            type: 'dot',
+            strokeIdx: endpoint.strokeIdx,
+            endpoint: endpoint.endpoint,
+            x: endpoint.x,
+            y: endpoint.y
+          };
+          // Also update expSelected for visual rendering
+          expSelected = { ...touchContext.selectedItem };
+          touchState = 'EDIT_SELECTED';
+          dbg('[TOUCHEND EDIT] Selected DOT');
+        } else if (strokeMid) {
+          touchContext.selectedItem = {
+            type: 'stroke',
+            strokeIdx: strokeMid.strokeIdx
+          };
+          expSelected = { ...touchContext.selectedItem };
+          touchState = 'EDIT_SELECTED';
+          dbg('[TOUCHEND EDIT] Selected STROKE');
+        } else {
+          // Tap on empty space - deselect
+          touchContext.selectedItem = null;
+          expSelected = null;
+          touchState = 'IDLE';
+          dbg('[TOUCHEND EDIT] Deselected');
+        }
+      } else {
+        // Wasn't a tap, reset state
+        touchState = touchContext.selectedItem ? 'EDIT_SELECTED' : 'IDLE';
+      }
+    }
+
+    pressStart = null;
+    updateTouchModeUI();
+    renderCanvas();
+    return;
   }
-  startDot = null;
-  renderCanvas();
 },{passive:false});
 
 // ═══════════════════════════════════════════════════════
@@ -1466,6 +1604,48 @@ document.querySelectorAll('.wb').forEach(b=>{
     b.classList.add('active');
   });
 });
+
+// ── Touch mode: EDIT button ──
+const editBtn = document.getElementById('tedit');
+if (editBtn) {
+  editBtn.addEventListener('click', () => {
+    touchAppMode = 'EDIT';
+    clearTouchSelection();
+    updateTouchModeUI();
+  });
+}
+
+// ── Touch mode: Draw button switches to DRAW mode ──
+document.getElementById('td').addEventListener('click', () => {
+  if (touchModeActive) {
+    touchAppMode = 'DRAW';
+    clearTouchSelection();
+    updateTouchModeUI();
+  }
+});
+
+// ── Touch mode: TRASH button ──
+const trashBtn = document.getElementById('ttrash');
+if (trashBtn) {
+  trashBtn.addEventListener('click', () => {
+    if (!touchContext.selectedItem) return;
+    pushUndo();
+    const ss = getActStrokes();
+
+    if (touchContext.selectedItem.type === 'stroke') {
+      ss.splice(touchContext.selectedItem.strokeIdx, 1);
+    } else if (touchContext.selectedItem.type === 'dot') {
+      const dotX = touchContext.selectedItem.x;
+      const dotY = touchContext.selectedItem.y;
+      const remaining = ss.filter(s =>
+        !((s.x1 === dotX && s.y1 === dotY) || (s.x2 === dotX && s.y2 === dotY))
+      );
+      setActStrokes(remaining);
+    }
+
+    clearTouchSelection();
+  });
+}
 
 // ═══════════════════════════════════════════════════════
 // SAVE / EXPORT
@@ -1564,6 +1744,7 @@ if (SMART_MODE) {
 buildCharPicker();
 requestAnimationFrame(() => {
   renderCanvas();  // renders editor canvas + triggers scheduleRegen → regenPreview
+  updateTouchModeUI();  // Initialize touch mode UI state
 });
 
 window.addEventListener('resize', scheduleRegen);

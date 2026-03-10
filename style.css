@@ -220,6 +220,33 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
 #draw-svg.exp-grabbing{cursor:grabbing}
 #draw-svg.exp-curve{cursor:crosshair}
 
+/* ══════════════════════════════════════════════════════════
+   TOUCH MODE - Explicit Draw/Edit toggle
+   Desktop: keep ERASE button, hide EDIT/TRASH
+   Touch: hide ERASE, show EDIT button, TRASH when selected
+   ══════════════════════════════════════════════════════════ */
+
+/* Touch-only elements hidden by default (desktop) */
+.touch-only{display:none !important}
+
+/* Trash button styling (appears when item selected in Edit mode) */
+.trash-btn{
+  background:#fff0f0 !important;color:var(--rd) !important;
+  border:2px solid #fecdd3 !important;border-radius:8px !important;
+  padding:6px 12px !important;margin-left:auto;
+  opacity:0;pointer-events:none;transition:opacity .15s,transform .15s
+}
+.trash-btn.visible{opacity:1;pointer-events:all}
+.trash-btn:hover{background:#ffe4e6 !important;transform:scale(1.05)}
+
+/* Edit mode active state */
+#tedit.active{background:var(--pu);color:white}
+#tedit.active .l{color:rgba(255,255,255,.75)}
+
+/* Mode indicator on canvas wrapper */
+.canvas-wrap[data-mode="edit"] #draw-svg{cursor:pointer}
+.canvas-wrap[data-mode="draw"] #draw-svg{cursor:crosshair}
+
 /* Hover hint tooltip */
 .exp-hint{
   position:fixed;background:rgba(30,27,46,.9);color:white;padding:6px 12px;
@@ -236,6 +263,18 @@ html,body{height:100%;font-family:'Nunito',sans-serif;background:var(--bg);color
    MOBILE RESPONSIVE — iPhone and small screens
    Editor first, preview below on scroll
    ══════════════════════════════════════════════════════════ */
+
+/* Touch device detection via pointer type */
+@media (pointer: coarse) {
+  /* Show touch-only elements */
+  .touch-only{display:flex !important}
+
+  /* Hide desktop-only ERASE button on touch */
+  #te{display:none !important}
+
+  /* Trash button base visible but faded until selection */
+  .trash-btn{display:flex !important}
+}
 
 /* Tablet and mobile: stack layout for easier touch interaction */
 @media (max-width: 900px) {
