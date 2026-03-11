@@ -148,3 +148,209 @@ describe('Buggy logic comparison', () => {
     expect(shouldBlockDrawing(true, false, false)).toBe(true);
   });
 });
+
+// ═══════════════════════════════════════════════════════
+// EDIT MODE: Drag state machine tests
+// ═══════════════════════════════════════════════════════
+
+/**
+ * Simulates the EDIT mode touch state machine for drag interactions.
+ * Models the sticky DRAG_PENDING approach: when a selection exists,
+ * any touch optimistically enters DRAG_PENDING, and promotes to
+ * DRAGGING only after enough movement.
+ *
+ * @param {string} initialState - Starting state ('IDLE', 'EDIT_SELECTED', etc.)
+ * @param {object|null} selectedItem - Current selection or null
+ * @param {object[]} events - Array of { type: 'start'|'move'|'end', x, y }
+ * @returns {{ finalState: string, dragStarted: boolean, undoRolledBack: boolean }}
+ */
+function simulateEditTouch(initialState, selectedItem, events) {
+  let state = initialState;
+  let dragStarted = false;
+  let undoRolledBack = false;
+  let undoPushed = false;
+  let pressStart = null;
+  const DRAG_PROMOTE_THRESH = 8;
+
+  for (const evt of events) {
+    if (evt.type === 'start') {
+      pressStart = { x: evt.x, y: evt.y };
+
+      if (selectedItem && state === 'EDIT_SELECTED') {
+        // Sticky model: any touch when selected → DRAG_PENDING
+        undoPushed = true;
+        state = 'EDIT_DRAG_PENDING';
+      } else {
+        state = 'EDIT_PENDING';
+      }
+
+    } else if (evt.type === 'move') {
+      if (state === 'EDIT_DRAG_PENDING' && pressStart) {
+        const dist = Math.hypot(evt.x - pressStart.x, evt.y - pressStart.y);
+        if (dist > DRAG_PROMOTE_THRESH) {
+          state = 'EDIT_DRAGGING';
+          dragStarted = true;
+        }
+        // else: not enough movement, stay in DRAG_PENDING
+      }
+      // EDIT_DRAGGING: drag in progress (handled by caller)
+
+    } else if (evt.type === 'end') {
+      if (state === 'EDIT_DRAG_PENDING') {
+        // Never promoted → was a tap, roll back undo
+        if (undoPushed) undoRolledBack = true;
+        state = 'EDIT_PENDING'; // fall through to tap handling
+      } else if (state === 'EDIT_DRAGGING') {
+        state = 'EDIT_SELECTED';
+      }
+      pressStart = null;
+    }
+  }
+
+  return { finalState: state, dragStarted, undoRolledBack };
+}
+
+describe('EDIT mode drag state machine', () => {
+  const dot = { type: 'dot', strokeIdx: 0, endpoint: 'start', x: 100, y: 100 };
+  const stroke = { type: 'stroke', strokeIdx: 0 };
+
+  describe('Sticky DRAG_PENDING model', () => {
+    it('touch on selected item with enough movement promotes to DRAGGING', () => {
+      const result = simulateEditTouch('EDIT_SELECTED', dot, [
+        { type: 'start', x: 120, y: 120 },  // 28px from dot — would FAIL with old 60px check
+        { type: 'move', x: 130, y: 130 },    // 14px from start — promotes
+        { type: 'end', x: 130, y: 130 }
+      ]);
+      expect(result.dragStarted).toBe(true);
+      expect(result.finalState).toBe('EDIT_SELECTED');
+      expect(result.undoRolledBack).toBe(false);
+    });
+
+    it('touch on selected item without movement is treated as tap', () => {
+      const result = simulateEditTouch('EDIT_SELECTED', dot, [
+        { type: 'start', x: 120, y: 120 },
+        { type: 'end', x: 122, y: 122 }      // 2.8px movement — not enough
+      ]);
+      expect(result.dragStarted).toBe(false);
+      expect(result.undoRolledBack).toBe(true);
+      expect(result.finalState).toBe('EDIT_PENDING');
+    });
+
+    it('touch far from selected item still enters DRAG_PENDING (sticky)', () => {
+      // This is the KEY difference from the old approach:
+      // Old: 60px threshold check → fails silently → drag never starts
+      // New: any touch → DRAG_PENDING → promotes on movement
+      const result = simulateEditTouch('EDIT_SELECTED', dot, [
+        { type: 'start', x: 180, y: 180 },   // 113px from dot — would ALWAYS fail old check
+        { type: 'move', x: 190, y: 190 },     // 14px movement — promotes
+        { type: 'end', x: 190, y: 190 }
+      ]);
+      expect(result.dragStarted).toBe(true);
+      expect(result.finalState).toBe('EDIT_SELECTED');
+    });
+
+    it('selected stroke: any touch + movement starts curve drag', () => {
+      const result = simulateEditTouch('EDIT_SELECTED', stroke, [
+        { type: 'start', x: 50, y: 50 },
+        { type: 'move', x: 60, y: 60 },       // 14px — promotes
+        { type: 'end', x: 60, y: 60 }
+      ]);
+      expect(result.dragStarted).toBe(true);
+    });
+
+    it('micro-movements below threshold do not promote to drag', () => {
+      const result = simulateEditTouch('EDIT_SELECTED', dot, [
+        { type: 'start', x: 100, y: 100 },
+        { type: 'move', x: 103, y: 103 },     // 4.2px — below 8px threshold
+        { type: 'move', x: 105, y: 105 },     // 7.1px — still below
+        { type: 'end', x: 105, y: 105 }
+      ]);
+      expect(result.dragStarted).toBe(false);
+      expect(result.undoRolledBack).toBe(true);
+    });
+
+    it('movement just above threshold promotes to drag', () => {
+      const result = simulateEditTouch('EDIT_SELECTED', dot, [
+        { type: 'start', x: 100, y: 100 },
+        { type: 'move', x: 106, y: 106 },     // 8.5px — just above 8px
+        { type: 'end', x: 106, y: 106 }
+      ]);
+      expect(result.dragStarted).toBe(true);
+    });
+  });
+
+  describe('No selection: tap to select', () => {
+    it('tap with no selection enters EDIT_PENDING for selection', () => {
+      const result = simulateEditTouch('IDLE', null, [
+        { type: 'start', x: 100, y: 100 },
+        { type: 'end', x: 100, y: 100 }
+      ]);
+      expect(result.finalState).toBe('EDIT_PENDING');
+      expect(result.dragStarted).toBe(false);
+    });
+
+    it('no undo is pushed when no selection exists', () => {
+      const result = simulateEditTouch('IDLE', null, [
+        { type: 'start', x: 100, y: 100 },
+        { type: 'move', x: 120, y: 120 },
+        { type: 'end', x: 120, y: 120 }
+      ]);
+      expect(result.undoRolledBack).toBe(false);
+    });
+  });
+
+  describe('Short stroke tiebreaker', () => {
+    /**
+     * When both endpoint and strokeMid are found for the same short stroke,
+     * prefer stroke selection (bending is more useful for short strokes).
+     */
+    function shortStrokeTiebreaker(endpoint, strokeMid, strokeLen, SP) {
+      if (endpoint && strokeMid && strokeMid.strokeIdx === endpoint.strokeIdx) {
+        if (strokeLen < SP * 2) {
+          return 'stroke'; // Prefer bending for short strokes
+        }
+        return endpoint.dist < strokeMid.dist ? 'endpoint' : 'stroke';
+      }
+      if (endpoint) return 'endpoint';
+      if (strokeMid) return 'stroke';
+      return 'none';
+    }
+
+    it('short stroke (31px, 1 grid spacing): prefers stroke selection', () => {
+      const result = shortStrokeTiebreaker(
+        { strokeIdx: 0, dist: 10 },
+        { strokeIdx: 0, dist: 15 },
+        31, 31  // strokeLen = SP = 31px (1 grid spacing)
+      );
+      expect(result).toBe('stroke');
+    });
+
+    it('long stroke: uses distance-based tiebreaker', () => {
+      const result = shortStrokeTiebreaker(
+        { strokeIdx: 0, dist: 10 },
+        { strokeIdx: 0, dist: 15 },
+        93, 31  // strokeLen = 3*SP (3 grid spacings)
+      );
+      expect(result).toBe('endpoint'); // endpoint is closer
+    });
+
+    it('long stroke: stroke wins when closer', () => {
+      const result = shortStrokeTiebreaker(
+        { strokeIdx: 0, dist: 20 },
+        { strokeIdx: 0, dist: 10 },
+        93, 31
+      );
+      expect(result).toBe('stroke');
+    });
+
+    it('different strokes: no tiebreaker, uses closest', () => {
+      const result = shortStrokeTiebreaker(
+        { strokeIdx: 0, dist: 10 },
+        { strokeIdx: 1, dist: 15 },
+        31, 31
+      );
+      // Different stroke indices — no tiebreaker applies
+      expect(result).toBe('endpoint');
+    });
+  });
+});

@@ -265,7 +265,7 @@ const TOUCH_MOUSE_GUARD = 500;     // Ignore mouse events within 500ms of touch
 // Desktop uses the existing SMART_MODE with ERASE button
 // ═══════════════════════════════════════════════════════════
 let touchAppMode = 'DRAW';  // 'DRAW' or 'EDIT' (touch devices only)
-let touchState = 'IDLE';    // 'IDLE', 'DRAW_PENDING', 'DRAWING', 'EDIT_SELECTED', 'EDIT_DRAGGING'
+let touchState = 'IDLE';    // 'IDLE', 'DRAW_PENDING', 'DRAWING', 'EDIT_SELECTED', 'EDIT_DRAG_PENDING', 'EDIT_DRAGGING'
 let touchContext = { startDot: null, selectedItem: null, dragType: null };
 
 // Update toolbar UI to reflect current touch mode
@@ -1281,52 +1281,42 @@ drawSVG.addEventListener('touchstart',e=>{
   // EDIT MODE: Only look for existing elements to select/manipulate
   // ════════════════════════════════════════════════════════════
   if (touchAppMode === 'EDIT') {
-    // If we already have a selection, check if touching it to drag
+    // If we already have a selection, ANY touch starts a drag attempt (sticky model)
+    // Distinguish tap vs drag via movement threshold in touchmove/touchend
     if (touchContext.selectedItem) {
+      pushUndo();
+      touchState = 'EDIT_DRAG_PENDING';
       if (touchContext.selectedItem.type === 'stroke') {
-        // Check if touching the selected stroke to bend it
         const ss = getActStrokes();
         const s = ss[touchContext.selectedItem.strokeIdx];
-        if (s && isOnSelectedStroke(p.x, p.y)) {
-          dbg('[TOUCHSTART EDIT] Starting curve bend on selected stroke');
-          pushUndo();
-          touchState = 'EDIT_DRAGGING';
-          touchContext.dragType = 'curve';
-          expDragging = {
-            type: 'curve',
-            strokeIdx: touchContext.selectedItem.strokeIdx,
-            cx: s.curved ? s.cx : (s.x1 + s.x2) / 2,
-            cy: s.curved ? s.cy : (s.y1 + s.y2) / 2
-          };
-          return;
-        }
-      } else if (touchContext.selectedItem.type === 'dot') {
-        // Check if touching the selected dot to move it
-        if (isOnSelectedDot(p.x, p.y)) {
-          dbg('[TOUCHSTART EDIT] Starting dot move on selected dot');
-          pushUndo();
-          touchState = 'EDIT_DRAGGING';
-          touchContext.dragType = 'dot';
-          expDragging = {
-            type: 'dot',
-            strokeIdx: touchContext.selectedItem.strokeIdx,
-            endpoint: touchContext.selectedItem.endpoint,
-            startX: touchContext.selectedItem.x,
-            startY: touchContext.selectedItem.y
-          };
-          return;
-        }
+        touchContext.dragType = 'curve';
+        expDragging = {
+          type: 'curve',
+          strokeIdx: touchContext.selectedItem.strokeIdx,
+          cx: s.curved ? s.cx : (s.x1 + s.x2) / 2,
+          cy: s.curved ? s.cy : (s.y1 + s.y2) / 2
+        };
+      } else {
+        touchContext.dragType = 'dot';
+        expDragging = {
+          type: 'dot',
+          strokeIdx: touchContext.selectedItem.strokeIdx,
+          endpoint: touchContext.selectedItem.endpoint,
+          startX: touchContext.selectedItem.x,
+          startY: touchContext.selectedItem.y
+        };
       }
+      dbg('[TOUCHSTART EDIT] DRAG_PENDING (sticky: any touch when selected)');
+      return;
     }
 
-    // Not touching current selection - check for new selection
+    // No selection - check for new selection on tap
     const endpoint = findEndpointAt(p.x, p.y);
     const strokeMid = findStrokeMidAt(p.x, p.y);
 
     if (endpoint || strokeMid) {
       dbg('[TOUCHSTART EDIT] Found element to potentially select');
       touchState = 'EDIT_PENDING';
-      // Will select on touchend if it was a tap
     } else {
       dbg('[TOUCHSTART EDIT] No element found, will deselect on tap');
       touchState = 'EDIT_PENDING';
@@ -1369,8 +1359,20 @@ drawSVG.addEventListener('touchmove',e=>{
   }
 
   // ════════════════════════════════════════════════════════════
-  // EDIT MODE: Handle dragging (bend/move)
+  // EDIT MODE: Handle drag pending promotion and active dragging
   // ════════════════════════════════════════════════════════════
+  if (touchAppMode === 'EDIT' && touchState === 'EDIT_DRAG_PENDING') {
+    if (pressStart) {
+      const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
+      if (dist > 8) {
+        touchState = 'EDIT_DRAGGING';
+        dbg('[TOUCHMOVE EDIT] Promoted DRAG_PENDING→DRAGGING (dist=' + Math.round(dist) + ')');
+        // Fall through to EDIT_DRAGGING handler below
+      } else {
+        return; // Not enough movement yet
+      }
+    }
+  }
   if (touchAppMode === 'EDIT' && touchState === 'EDIT_DRAGGING') {
     if (expDragging?.type === 'curve') {
       const ss = getActStrokes();
@@ -1469,6 +1471,17 @@ drawSVG.addEventListener('touchend',e=>{
   // EDIT MODE: Finish drag or select element
   // ════════════════════════════════════════════════════════════
   if (touchAppMode === 'EDIT') {
+    // DRAG_PENDING that never promoted → was a tap, not a drag
+    if (touchState === 'EDIT_DRAG_PENDING') {
+      dbg('[TOUCHEND EDIT] DRAG_PENDING→tap, rolling back undo');
+      // Roll back the optimistic undo push
+      if (undoStk[curLetter]?.length) undoStk[curLetter].pop();
+      expDragging = null;
+      touchContext.dragType = null;
+      // Fall through to tap handling by switching to EDIT_PENDING
+      touchState = 'EDIT_PENDING';
+    }
+
     // Finish dragging
     if (touchState === 'EDIT_DRAGGING') {
       dbg('[TOUCHEND EDIT] Finishing drag');
@@ -1497,9 +1510,23 @@ drawSVG.addEventListener('touchend',e=>{
         let selectEndpoint = false;
         let selectStroke = false;
         if (endpoint && strokeMid) {
-          // Both found - compare distances, prefer stroke for short strokes
-          selectEndpoint = endpoint.dist < strokeMid.dist;
-          selectStroke = !selectEndpoint;
+          // For short strokes where endpoint and stroke overlap, prefer stroke selection
+          // (bending is more useful for short strokes than moving endpoints)
+          if (strokeMid.strokeIdx === endpoint.strokeIdx) {
+            const ss = getActStrokes();
+            const s = ss[strokeMid.strokeIdx];
+            const strokeLen = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+            if (strokeLen < SP * 2) {
+              selectStroke = true;
+              dbg('[TOUCHEND EDIT] Short stroke tiebreaker → stroke', { strokeLen });
+            } else {
+              selectEndpoint = endpoint.dist < strokeMid.dist;
+              selectStroke = !selectEndpoint;
+            }
+          } else {
+            selectEndpoint = endpoint.dist < strokeMid.dist;
+            selectStroke = !selectEndpoint;
+          }
           dbg('[TOUCHEND EDIT] Both found', { endpointDist: endpoint.dist, strokeDist: strokeMid.dist });
         } else if (endpoint) {
           selectEndpoint = true;

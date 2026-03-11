@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Touch Edit Test</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #eee; font-family: system-ui, sans-serif; overflow: hidden; touch-action: none; }
+
+.controls {
+  display: flex; gap: 8px; padding: 8px; background: #16213e; flex-wrap: wrap; align-items: center;
+}
+.controls label { font-size: 13px; cursor: pointer; padding: 4px 8px; border-radius: 4px; background: #0f3460; }
+.controls input[type="radio"] { margin-right: 3px; }
+.controls input[type="radio"]:checked + span { color: #e94560; font-weight: bold; }
+.controls button {
+  padding: 4px 12px; border: none; border-radius: 4px; background: #e94560; color: #fff;
+  font-size: 13px; cursor: pointer;
+}
+
+svg {
+  display: block; width: 100%; background: #0f0f23;
+}
+
+/* Debug panel */
+#debug {
+  position: fixed; bottom: 0; left: 0; right: 0; max-height: 40vh; overflow-y: auto;
+  background: rgba(0,0,0,0.92); color: #0f0; font-family: monospace; font-size: 11px;
+  padding: 6px 8px; z-index: 9999; line-height: 1.4;
+}
+#debug .warn { color: #ff0; }
+#debug .err { color: #f44; }
+#debug .ok { color: #4f4; }
+#debug .state { color: #4af; }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <label><input type="radio" name="strategy" value="A" checked><span>A: Current</span></label>
+  <label><input type="radio" name="strategy" value="B"><span>B: Sticky</span></label>
+  <label><input type="radio" name="strategy" value="C"><span>C: Mega-threshold</span></label>
+  <label><input type="radio" name="strategy" value="D"><span>D: Visual handle</span></label>
+  <button id="resetBtn">Reset</button>
+  <button id="clearLog">Clear Log</button>
+</div>
+
+<svg id="canvas" viewBox="0 0 200 400" preserveAspectRatio="xMidYMid meet">
+  <!-- Grid dots -->
+  <g id="dots"></g>
+  <!-- Strokes -->
+  <g id="strokes"></g>
+  <!-- Selection overlay -->
+  <g id="selection"></g>
+  <!-- Drag handle (strategy D) -->
+  <circle id="dragHandle" cx="0" cy="0" r="18" fill="rgba(233,69,96,0.5)" stroke="#e94560" stroke-width="2" display="none"/>
+</svg>
+
+<div id="debug"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// TOUCH EDIT TEST - Standalone test canvas
+// Tests strategies for reliable select-then-drag on iOS Safari
+// ═══════════════════════════════════════════════════════
+
+const SP = 31;  // Grid spacing
+const MX = 38;  // Margin X
+const MY = 12;  // Margin Y
+const COLS = 4;
+const ROWS_START = 1;
+const ROWS_END = 11;
+
+const svg = document.getElementById('canvas');
+const dotsG = document.getElementById('dots');
+const strokesG = document.getElementById('strokes');
+const selectionG = document.getElementById('selection');
+const dragHandle = document.getElementById('dragHandle');
+const debugEl = document.getElementById('debug');
+
+// ═══════════════════════════════════════════════════════
+// TEST STROKES (hardcoded)
+// ═══════════════════════════════════════════════════════
+const initialStrokes = [
+  // Long vertical stroke (8 grid spacings)
+  { x1: MX + 0*SP, y1: MY + 1*SP, x2: MX + 0*SP, y2: MY + 9*SP, curved: false },
+  // Short horizontal stroke (1 grid spacing, 31px)
+  { x1: MX + 1*SP, y1: MY + 3*SP, x2: MX + 2*SP, y2: MY + 3*SP, curved: false },
+  // Diagonal stroke (4 grid spacings)
+  { x1: MX + 1*SP, y1: MY + 5*SP, x2: MX + 3*SP, y2: MY + 9*SP, curved: false },
+  // Curved stroke
+  { x1: MX + 2*SP, y1: MY + 1*SP, x2: MX + 4*SP, y2: MY + 1*SP, curved: true,
+    cx: MX + 3*SP, cy: MY + 3*SP },
+];
+
+let strokes = JSON.parse(JSON.stringify(initialStrokes));
+
+// ═══════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════
+let state = 'IDLE'; // IDLE, SELECTED, DRAG_PENDING, DRAGGING, EDIT_PENDING
+let selectedItem = null; // { type: 'dot'|'stroke', strokeIdx, endpoint?, x?, y? }
+let dragInfo = null;
+let pressStart = null;
+let strategy = 'A';
+let undoStack = [];
+
+// SVG element references (avoid innerHTML rebuild)
+let strokeEls = [];
+let dotEls = [];
+let selectionRing = null;
+
+// ═══════════════════════════════════════════════════════
+// DEBUG LOGGING
+// ═══════════════════════════════════════════════════════
+let logCount = 0;
+function dbg(msg, cls = '') {
+  logCount++;
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  const ts = new Date().toLocaleTimeString('en-US', { hour12: false, fractionalSecondDigits: 2 });
+  line.textContent = `[${ts}] ${msg}`;
+  debugEl.prepend(line);
+  // Keep max 100 lines
+  while (debugEl.children.length > 100) debugEl.lastChild.remove();
+}
+
+// ═══════════════════════════════════════════════════════
+// RENDERING (one-time build, then attribute updates)
+// ═══════════════════════════════════════════════════════
+function buildScene() {
+  // Clear previous
+  dotsG.innerHTML = '';
+  strokesG.innerHTML = '';
+  selectionG.innerHTML = '';
+  strokeEls = [];
+  dotEls = [];
+
+  // Draw grid dots
+  for (let c = 0; c <= COLS; c++) {
+    for (let r = ROWS_START; r <= ROWS_END; r++) {
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('cx', MX + c * SP);
+      circle.setAttribute('cy', MY + r * SP);
+      circle.setAttribute('r', 3);
+      circle.setAttribute('fill', '#555');
+      dotsG.appendChild(circle);
+    }
+  }
+
+  // Draw strokes
+  strokes.forEach((s, i) => {
+    const el = createStrokeEl(s);
+    strokesG.appendChild(el);
+    strokeEls.push(el);
+  });
+
+  // Draw endpoint dots
+  drawEndpointDots();
+
+  // Create selection ring (hidden by default)
+  selectionRing = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  selectionRing.setAttribute('r', 12);
+  selectionRing.setAttribute('fill', 'none');
+  selectionRing.setAttribute('stroke', '#e94560');
+  selectionRing.setAttribute('stroke-width', 3);
+  selectionRing.setAttribute('display', 'none');
+  selectionG.appendChild(selectionRing);
+
+  // Stroke selection highlight
+  const selStroke = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  selStroke.setAttribute('stroke', '#e94560');
+  selStroke.setAttribute('stroke-width', 4);
+  selStroke.setAttribute('stroke-linecap', 'round');
+  selStroke.setAttribute('display', 'none');
+  selStroke.id = 'selStrokeLine';
+  selectionG.appendChild(selStroke);
+
+  const selPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  selPath.setAttribute('stroke', '#e94560');
+  selPath.setAttribute('stroke-width', 4);
+  selPath.setAttribute('stroke-linecap', 'round');
+  selPath.setAttribute('fill', 'none');
+  selPath.setAttribute('display', 'none');
+  selPath.id = 'selStrokePath';
+  selectionG.appendChild(selPath);
+}
+
+function createStrokeEl(s) {
+  if (s.curved) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M${s.x1},${s.y1} Q${s.cx},${s.cy} ${s.x2},${s.y2}`);
+    path.setAttribute('stroke', '#ccc');
+    path.setAttribute('stroke-width', 11);
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('fill', 'none');
+    return path;
+  } else {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', s.x1); line.setAttribute('y1', s.y1);
+    line.setAttribute('x2', s.x2); line.setAttribute('y2', s.y2);
+    line.setAttribute('stroke', '#ccc');
+    line.setAttribute('stroke-width', 11);
+    line.setAttribute('stroke-linecap', 'round');
+    return line;
+  }
+}
+
+function drawEndpointDots() {
+  // Remove old endpoint dots (keep grid dots)
+  dotEls.forEach(el => el.remove());
+  dotEls = [];
+
+  const endpoints = new Map();
+  strokes.forEach((s, i) => {
+    const k1 = `${s.x1},${s.y1}`;
+    const k2 = `${s.x2},${s.y2}`;
+    if (!endpoints.has(k1)) endpoints.set(k1, { x: s.x1, y: s.y1 });
+    if (!endpoints.has(k2)) endpoints.set(k2, { x: s.x2, y: s.y2 });
+  });
+
+  endpoints.forEach(({ x, y }) => {
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', x);
+    c.setAttribute('cy', y);
+    c.setAttribute('r', 7);
+    c.setAttribute('fill', '#a855f7');
+    dotsG.appendChild(c);
+    dotEls.push(c);
+  });
+}
+
+function updateStrokeEl(idx) {
+  const s = strokes[idx];
+  const el = strokeEls[idx];
+  if (!el) return;
+  if (s.curved) {
+    el.setAttribute('d', `M${s.x1},${s.y1} Q${s.cx},${s.cy} ${s.x2},${s.y2}`);
+  } else {
+    el.setAttribute('x1', s.x1); el.setAttribute('y1', s.y1);
+    el.setAttribute('x2', s.x2); el.setAttribute('y2', s.y2);
+  }
+}
+
+function updateSelectionVisual() {
+  const selStrokeLine = document.getElementById('selStrokeLine');
+  const selStrokePath = document.getElementById('selStrokePath');
+
+  if (!selectedItem) {
+    selectionRing.setAttribute('display', 'none');
+    selStrokeLine.setAttribute('display', 'none');
+    selStrokePath.setAttribute('display', 'none');
+    dragHandle.setAttribute('display', 'none');
+    return;
+  }
+
+  if (selectedItem.type === 'dot') {
+    selectionRing.setAttribute('cx', selectedItem.x);
+    selectionRing.setAttribute('cy', selectedItem.y);
+    selectionRing.setAttribute('display', 'block');
+    selStrokeLine.setAttribute('display', 'none');
+    selStrokePath.setAttribute('display', 'none');
+
+    if (strategy === 'D') {
+      dragHandle.setAttribute('cx', selectedItem.x);
+      dragHandle.setAttribute('cy', selectedItem.y);
+      dragHandle.setAttribute('display', 'block');
+    } else {
+      dragHandle.setAttribute('display', 'none');
+    }
+  } else if (selectedItem.type === 'stroke') {
+    selectionRing.setAttribute('display', 'none');
+    const s = strokes[selectedItem.strokeIdx];
+    if (s.curved) {
+      selStrokeLine.setAttribute('display', 'none');
+      selStrokePath.setAttribute('d', `M${s.x1},${s.y1} Q${s.cx},${s.cy} ${s.x2},${s.y2}`);
+      selStrokePath.setAttribute('display', 'block');
+    } else {
+      selStrokePath.setAttribute('display', 'none');
+      selStrokeLine.setAttribute('x1', s.x1); selStrokeLine.setAttribute('y1', s.y1);
+      selStrokeLine.setAttribute('x2', s.x2); selStrokeLine.setAttribute('y2', s.y2);
+      selStrokeLine.setAttribute('display', 'block');
+    }
+
+    if (strategy === 'D') {
+      const midX = s.curved ? s.cx : (s.x1 + s.x2) / 2;
+      const midY = s.curved ? s.cy : (s.y1 + s.y2) / 2;
+      dragHandle.setAttribute('cx', midX);
+      dragHandle.setAttribute('cy', midY);
+      dragHandle.setAttribute('display', 'block');
+    } else {
+      dragHandle.setAttribute('display', 'none');
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// HIT DETECTION
+// ═══════════════════════════════════════════════════════
+function findEndpointAt(px, py) {
+  const radius = 50; // Touch radius
+  let closest = null;
+  let closestDist = Infinity;
+  strokes.forEach((s, i) => {
+    const d1 = Math.hypot(s.x1 - px, s.y1 - py);
+    if (d1 < radius && d1 < closestDist) { closestDist = d1; closest = { strokeIdx: i, endpoint: 'start', x: s.x1, y: s.y1, dist: d1 }; }
+    const d2 = Math.hypot(s.x2 - px, s.y2 - py);
+    if (d2 < radius && d2 < closestDist) { closestDist = d2; closest = { strokeIdx: i, endpoint: 'end', x: s.x2, y: s.y2, dist: d2 }; }
+  });
+  return closest;
+}
+
+function findStrokeMidAt(px, py) {
+  const threshold = 45;
+  for (let i = strokes.length - 1; i >= 0; i--) {
+    const s = strokes[i];
+    const strokeLen = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+    const isShort = strokeLen < threshold * 2;
+    const endpointExcl = isShort ? Math.min(threshold * 0.3, strokeLen * 0.2) : threshold;
+
+    if (Math.hypot(s.x1 - px, s.y1 - py) < endpointExcl) continue;
+    if (Math.hypot(s.x2 - px, s.y2 - py) < endpointExcl) continue;
+
+    if (s.curved && s.cx !== undefined) {
+      let minDist = Infinity;
+      for (let t = 0.1; t <= 0.9; t += 0.1) {
+        const mt = 1 - t;
+        const x = mt*mt*s.x1 + 2*mt*t*s.cx + t*t*s.x2;
+        const y = mt*mt*s.y1 + 2*mt*t*s.cy + t*t*s.y2;
+        minDist = Math.min(minDist, Math.hypot(x - px, y - py));
+      }
+      if (minDist < threshold + 5.5) return { strokeIdx: i, dist: minDist };
+    } else {
+      const dx = s.x2 - s.x1, dy = s.y2 - s.y1, lq = dx*dx + dy*dy;
+      let t = lq > 0 ? ((px - s.x1)*dx + (py - s.y1)*dy) / lq : 0;
+      t = Math.max(0, Math.min(1, t));
+      const dist = Math.hypot(px - (s.x1 + t*dx), py - (s.y1 + t*dy));
+      if (dist < threshold + 5.5) return { strokeIdx: i, dist };
+    }
+  }
+  return null;
+}
+
+function snapToGrid(x, y) {
+  const col = Math.round((x - MX) / SP);
+  const row = Math.round((y - MY) / SP);
+  return {
+    x: MX + Math.max(0, Math.min(COLS, col)) * SP,
+    y: MY + Math.max(1, Math.min(ROWS_END, row)) * SP
+  };
+}
+
+function clampControlPoint(x1, y1, x2, y2, cx, cy) {
+  const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
+  const maxDist = SP * 2.5;
+  const dist = Math.hypot(cx - midX, cy - midY);
+  if (dist > maxDist) {
+    const scale = maxDist / dist;
+    cx = midX + (cx - midX) * scale;
+    cy = midY + (cy - midY) * scale;
+  }
+  return { cx, cy };
+}
+
+// ═══════════════════════════════════════════════════════
+// SVG COORDINATE CONVERSION
+// ═══════════════════════════════════════════════════════
+function svgPt(touch) {
+  const rect = svg.getBoundingClientRect();
+  const viewBox = svg.viewBox.baseVal;
+  const scaleX = viewBox.width / rect.width;
+  const scaleY = viewBox.height / rect.height;
+  return {
+    x: (touch.clientX - rect.left) * scaleX,
+    y: (touch.clientY - rect.top) * scaleY
+  };
+}
+
+// ═══════════════════════════════════════════════════════
+// UNDO
+// ═══════════════════════════════════════════════════════
+function pushUndo() {
+  undoStack.push(JSON.parse(JSON.stringify(strokes)));
+  if (undoStack.length > 40) undoStack.shift();
+}
+
+function popUndo() {
+  if (undoStack.length) {
+    strokes = undoStack.pop();
+    rebuildStrokes();
+  }
+}
+
+function rebuildStrokes() {
+  strokesG.innerHTML = '';
+  strokeEls = [];
+  strokes.forEach(s => {
+    const el = createStrokeEl(s);
+    strokesG.appendChild(el);
+    strokeEls.push(el);
+  });
+  drawEndpointDots();
+  updateSelectionVisual();
+}
+
+// ═══════════════════════════════════════════════════════
+// STRATEGY IMPLEMENTATIONS
+// ═══════════════════════════════════════════════════════
+
+// ── Strategy A: Current (app.js behavior) ──
+const strategyA = {
+  touchstart(p) {
+    if (selectedItem) {
+      if (selectedItem.type === 'stroke') {
+        const s = strokes[selectedItem.strokeIdx];
+        // isOnSelectedStroke - 70px threshold
+        const threshold = 70;
+        const dx = s.x2 - s.x1, dy = s.y2 - s.y1, lq = dx*dx + dy*dy;
+        let t = lq > 0 ? ((p.x - s.x1)*dx + (p.y - s.y1)*dy) / lq : 0;
+        t = Math.max(0, Math.min(1, t));
+        const dist = Math.hypot(p.x - (s.x1 + t*dx), p.y - (s.y1 + t*dy));
+        if (dist < threshold) {
+          pushUndo();
+          state = 'DRAGGING';
+          dragInfo = { type: 'curve', strokeIdx: selectedItem.strokeIdx,
+            cx: s.curved ? s.cx : (s.x1+s.x2)/2, cy: s.curved ? s.cy : (s.y1+s.y2)/2 };
+          dbg(`A: Start curve drag (dist=${Math.round(dist)})`, 'ok');
+          return;
+        }
+      } else if (selectedItem.type === 'dot') {
+        const dist = Math.hypot(p.x - selectedItem.x, p.y - selectedItem.y);
+        if (dist < 60) {
+          pushUndo();
+          state = 'DRAGGING';
+          dragInfo = { type: 'dot', strokeIdx: selectedItem.strokeIdx,
+            endpoint: selectedItem.endpoint, startX: selectedItem.x, startY: selectedItem.y };
+          dbg(`A: Start dot drag (dist=${Math.round(dist)})`, 'ok');
+          return;
+        }
+      }
+      dbg(`A: Missed selected item, fallthrough to reselect`, 'warn');
+    }
+    // Fallthrough: look for new selection
+    const ep = findEndpointAt(p.x, p.y);
+    const sm = findStrokeMidAt(p.x, p.y);
+    if (ep || sm) {
+      state = 'EDIT_PENDING';
+      dbg(`A: Found element, EDIT_PENDING`);
+    } else {
+      state = 'EDIT_PENDING';
+      dbg(`A: Nothing found, will deselect on tap`);
+    }
+  },
+
+  touchmove(p) {
+    if (state === 'DRAGGING') {
+      performDrag(p);
+    }
+  },
+
+  touchend(p) {
+    if (state === 'DRAGGING') {
+      finishDrag();
+      return;
+    }
+    if (state === 'EDIT_PENDING') {
+      handleTapSelection(p);
+    }
+  }
+};
+
+// ── Strategy B: Sticky (DRAG_PENDING) ──
+const strategyB = {
+  touchstart(p) {
+    if (selectedItem) {
+      // ANY touch starts a drag when something is selected
+      pushUndo();
+      state = 'DRAG_PENDING';
+      if (selectedItem.type === 'stroke') {
+        const s = strokes[selectedItem.strokeIdx];
+        dragInfo = { type: 'curve', strokeIdx: selectedItem.strokeIdx,
+          cx: s.curved ? s.cx : (s.x1+s.x2)/2, cy: s.curved ? s.cy : (s.y1+s.y2)/2 };
+      } else {
+        dragInfo = { type: 'dot', strokeIdx: selectedItem.strokeIdx,
+          endpoint: selectedItem.endpoint, startX: selectedItem.x, startY: selectedItem.y };
+      }
+      dbg(`B: DRAG_PENDING (sticky, any touch)`, 'state');
+      return;
+    }
+    const ep = findEndpointAt(p.x, p.y);
+    const sm = findStrokeMidAt(p.x, p.y);
+    if (ep || sm) {
+      state = 'EDIT_PENDING';
+      dbg(`B: Found element, EDIT_PENDING`);
+    } else {
+      state = 'EDIT_PENDING';
+      dbg(`B: Nothing found, will deselect on tap`);
+    }
+  },
+
+  touchmove(p) {
+    if (state === 'DRAG_PENDING') {
+      const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
+      if (dist > 8) {
+        state = 'DRAGGING';
+        dbg(`B: Promoted to DRAGGING (dist=${Math.round(dist)})`, 'ok');
+      } else {
+        return; // Not enough movement
+      }
+    }
+    if (state === 'DRAGGING') {
+      performDrag(p);
+    }
+  },
+
+  touchend(p) {
+    if (state === 'DRAG_PENDING') {
+      // Was a tap, not a drag — roll back undo
+      popUndo();
+      dragInfo = null;
+      dbg(`B: DRAG_PENDING→tap, rolled back undo`, 'state');
+      // Fall through to tap selection
+      handleTapSelection(p);
+      return;
+    }
+    if (state === 'DRAGGING') {
+      finishDrag();
+      return;
+    }
+    if (state === 'EDIT_PENDING') {
+      handleTapSelection(p);
+    }
+  }
+};
+
+// ── Strategy C: Mega-threshold ──
+const strategyC = {
+  touchstart(p) {
+    if (selectedItem) {
+      // 120px threshold — basically the whole canvas area
+      const threshold = 120;
+      let dist;
+      if (selectedItem.type === 'dot') {
+        dist = Math.hypot(p.x - selectedItem.x, p.y - selectedItem.y);
+      } else {
+        const s = strokes[selectedItem.strokeIdx];
+        const midX = s.curved ? s.cx : (s.x1+s.x2)/2;
+        const midY = s.curved ? s.cy : (s.y1+s.y2)/2;
+        dist = Math.hypot(p.x - midX, p.y - midY);
+      }
+      if (dist < threshold) {
+        pushUndo();
+        state = 'DRAGGING';
+        if (selectedItem.type === 'stroke') {
+          const s = strokes[selectedItem.strokeIdx];
+          dragInfo = { type: 'curve', strokeIdx: selectedItem.strokeIdx,
+            cx: s.curved ? s.cx : (s.x1+s.x2)/2, cy: s.curved ? s.cy : (s.y1+s.y2)/2 };
+        } else {
+          dragInfo = { type: 'dot', strokeIdx: selectedItem.strokeIdx,
+            endpoint: selectedItem.endpoint, startX: selectedItem.x, startY: selectedItem.y };
+        }
+        dbg(`C: Start drag (mega-threshold, dist=${Math.round(dist)})`, 'ok');
+        return;
+      }
+      dbg(`C: Beyond mega-threshold (dist=${Math.round(dist)})`, 'warn');
+    }
+    const ep = findEndpointAt(p.x, p.y);
+    const sm = findStrokeMidAt(p.x, p.y);
+    state = 'EDIT_PENDING';
+    dbg(`C: EDIT_PENDING`);
+  },
+
+  touchmove(p) {
+    if (state === 'DRAGGING') performDrag(p);
+  },
+
+  touchend(p) {
+    if (state === 'DRAGGING') { finishDrag(); return; }
+    if (state === 'EDIT_PENDING') handleTapSelection(p);
+  }
+};
+
+// ── Strategy D: Visual handle ──
+const strategyD = {
+  touchstart(p) {
+    // Same as B but with visual handle
+    strategyB.touchstart(p);
+  },
+  touchmove(p) { strategyB.touchmove(p); },
+  touchend(p) { strategyB.touchend(p); }
+};
+
+const strategies = { A: strategyA, B: strategyB, C: strategyC, D: strategyD };
+
+// ═══════════════════════════════════════════════════════
+// SHARED DRAG LOGIC
+// ═══════════════════════════════════════════════════════
+function performDrag(p) {
+  if (!dragInfo) return;
+
+  if (dragInfo.type === 'curve') {
+    const s = strokes[dragInfo.strokeIdx];
+    const clamped = clampControlPoint(s.x1, s.y1, s.x2, s.y2, p.x, p.y);
+    s.curved = true;
+    s.cx = clamped.cx;
+    s.cy = clamped.cy;
+    // Direct attribute update — NO innerHTML rebuild
+    updateStrokeEl(dragInfo.strokeIdx);
+    updateSelectionVisual();
+  } else if (dragInfo.type === 'dot') {
+    const snapped = snapToGrid(p.x, p.y);
+    const s = strokes[dragInfo.strokeIdx];
+    const oldX = dragInfo.endpoint === 'start' ? s.x1 : s.x2;
+    const oldY = dragInfo.endpoint === 'start' ? s.y1 : s.y2;
+    strokes.forEach((stroke, i) => {
+      let changed = false;
+      if (stroke.x1 === oldX && stroke.y1 === oldY) { stroke.x1 = snapped.x; stroke.y1 = snapped.y; changed = true; }
+      if (stroke.x2 === oldX && stroke.y2 === oldY) { stroke.x2 = snapped.x; stroke.y2 = snapped.y; changed = true; }
+      if (changed) updateStrokeEl(i);
+    });
+    // Update dragInfo for next move
+    if (selectedItem) { selectedItem.x = snapped.x; selectedItem.y = snapped.y; }
+    dragInfo.startX = snapped.x;
+    dragInfo.startY = snapped.y;
+    drawEndpointDots();
+    updateSelectionVisual();
+  }
+}
+
+function finishDrag() {
+  dbg(`Drag finished (${dragInfo?.type})`, 'ok');
+  dragInfo = null;
+  state = 'SELECTED';
+  updateSelectionVisual();
+}
+
+function handleTapSelection(p) {
+  if (!pressStart) { state = 'IDLE'; return; }
+  const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
+  const duration = Date.now() - pressStart.time;
+  const wasTap = dist < 40 && duration < 300;
+
+  if (!wasTap) {
+    dbg(`Not a tap (dist=${Math.round(dist)}, dur=${duration}ms)`, 'warn');
+    state = selectedItem ? 'SELECTED' : 'IDLE';
+    updateSelectionVisual();
+    return;
+  }
+
+  // Use pressStart for hit detection
+  const ep = findEndpointAt(pressStart.x, pressStart.y);
+  const sm = findStrokeMidAt(pressStart.x, pressStart.y);
+
+  let selectEndpoint = false, selectStroke = false;
+  if (ep && sm) {
+    // Short stroke tiebreaker
+    const s = strokes[sm.strokeIdx];
+    const strokeLen = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+    if (sm.strokeIdx === ep.strokeIdx && strokeLen < SP * 2) {
+      selectStroke = true;
+      dbg(`Short stroke tiebreaker → stroke`, 'state');
+    } else {
+      selectEndpoint = ep.dist < sm.dist;
+      selectStroke = !selectEndpoint;
+    }
+  } else if (ep) {
+    selectEndpoint = true;
+  } else if (sm) {
+    selectStroke = true;
+  }
+
+  if (selectEndpoint) {
+    selectedItem = { type: 'dot', strokeIdx: ep.strokeIdx, endpoint: ep.endpoint, x: ep.x, y: ep.y };
+    state = 'SELECTED';
+    dbg(`Selected DOT (stroke ${ep.strokeIdx}, ${ep.endpoint})`, 'ok');
+  } else if (selectStroke) {
+    selectedItem = { type: 'stroke', strokeIdx: sm.strokeIdx };
+    state = 'SELECTED';
+    dbg(`Selected STROKE ${sm.strokeIdx}`, 'ok');
+  } else {
+    selectedItem = null;
+    state = 'IDLE';
+    dbg(`Deselected (tap empty)`, 'state');
+  }
+
+  updateSelectionVisual();
+}
+
+// ═══════════════════════════════════════════════════════
+// TOUCH EVENT HANDLERS
+// ═══════════════════════════════════════════════════════
+svg.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  const p = svgPt(touch);
+  pressStart = { x: p.x, y: p.y, time: Date.now() };
+  dbg(`── touchstart (${Math.round(p.x)},${Math.round(p.y)}) state=${state} strategy=${strategy}`, 'state');
+  strategies[strategy].touchstart(p);
+}, { passive: false });
+
+svg.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const p = svgPt(e.touches[0]);
+  strategies[strategy].touchmove(p);
+}, { passive: false });
+
+svg.addEventListener('touchend', e => {
+  e.preventDefault();
+  const p = svgPt(e.changedTouches[0]);
+  dbg(`── touchend (${Math.round(p.x)},${Math.round(p.y)}) state=${state}`, 'state');
+  strategies[strategy].touchend(p);
+  pressStart = null;
+}, { passive: false });
+
+svg.addEventListener('touchcancel', e => {
+  dbg('── touchcancel!', 'err');
+  state = selectedItem ? 'SELECTED' : 'IDLE';
+  dragInfo = null;
+  pressStart = null;
+}, { passive: false });
+
+// ── Mouse events (for desktop testing) ──
+let mouseDown = false;
+svg.addEventListener('mousedown', e => {
+  mouseDown = true;
+  const rect = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  const p = { x: (e.clientX - rect.left) * vb.width / rect.width, y: (e.clientY - rect.top) * vb.height / rect.height };
+  pressStart = { x: p.x, y: p.y, time: Date.now() };
+  dbg(`── mousedown (${Math.round(p.x)},${Math.round(p.y)}) state=${state}`, 'state');
+  strategies[strategy].touchstart(p);
+});
+
+svg.addEventListener('mousemove', e => {
+  if (!mouseDown) return;
+  const rect = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  const p = { x: (e.clientX - rect.left) * vb.width / rect.width, y: (e.clientY - rect.top) * vb.height / rect.height };
+  strategies[strategy].touchmove(p);
+});
+
+svg.addEventListener('mouseup', e => {
+  if (!mouseDown) return;
+  mouseDown = false;
+  const rect = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  const p = { x: (e.clientX - rect.left) * vb.width / rect.width, y: (e.clientY - rect.top) * vb.height / rect.height };
+  dbg(`── mouseup (${Math.round(p.x)},${Math.round(p.y)}) state=${state}`, 'state');
+  strategies[strategy].touchend(p);
+  pressStart = null;
+});
+
+// ═══════════════════════════════════════════════════════
+// UI CONTROLS
+// ═══════════════════════════════════════════════════════
+document.querySelectorAll('input[name="strategy"]').forEach(r => {
+  r.addEventListener('change', () => {
+    strategy = r.value;
+    state = 'IDLE';
+    selectedItem = null;
+    dragInfo = null;
+    updateSelectionVisual();
+    dbg(`Switched to Strategy ${strategy}`, 'state');
+  });
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  strokes = JSON.parse(JSON.stringify(initialStrokes));
+  state = 'IDLE';
+  selectedItem = null;
+  dragInfo = null;
+  undoStack = [];
+  rebuildStrokes();
+  dbg('Reset strokes to initial state', 'state');
+});
+
+document.getElementById('clearLog').addEventListener('click', () => {
+  debugEl.innerHTML = '';
+  logCount = 0;
+});
+
+// ═══════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════
+buildScene();
+dbg('Touch Edit Test ready. Select a strategy and interact with strokes.', 'ok');
+dbg('Strokes: 0=long vertical, 1=short horizontal, 2=diagonal, 3=curved', 'ok');
+</script>
+</body>
+</html>

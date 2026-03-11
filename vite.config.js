@@ -7,7 +7,10 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     rollupOptions: {
-      input: 'index.html'
+      input: {
+        main: 'index.html',
+        touchTest: 'touch-test.html'
+      }
     }
   },
   test: {
