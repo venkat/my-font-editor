@@ -23,16 +23,7 @@ svg {
   display: block; width: 100%; background: #0f0f23;
 }
 
-/* Debug panel */
-#debug {
-  position: fixed; bottom: 0; left: 0; right: 0; max-height: 40vh; overflow-y: auto;
-  background: rgba(0,0,0,0.92); color: #0f0; font-family: monospace; font-size: 11px;
-  padding: 6px 8px; z-index: 9999; line-height: 1.4;
-}
-#debug .warn { color: #ff0; }
-#debug .err { color: #f44; }
-#debug .ok { color: #4f4; }
-#debug .state { color: #4af; }
+/* Debug panel removed — use Safari Web Inspector console instead */
 </style>
 </head>
 <body>
@@ -43,7 +34,6 @@ svg {
   <label><input type="radio" name="strategy" value="C"><span>C: Mega-threshold</span></label>
   <label><input type="radio" name="strategy" value="D"><span>D: Visual handle</span></label>
   <button id="resetBtn">Reset</button>
-  <button id="clearLog">Clear Log</button>
 </div>
 
 <svg id="canvas" viewBox="0 0 200 400" preserveAspectRatio="xMidYMid meet">
@@ -57,7 +47,6 @@ svg {
   <circle id="dragHandle" cx="0" cy="0" r="18" fill="rgba(233,69,96,0.5)" stroke="#e94560" stroke-width="2" display="none"/>
 </svg>
 
-<div id="debug"></div>
 
 <script>
 // ═══════════════════════════════════════════════════════
@@ -77,7 +66,6 @@ const dotsG = document.getElementById('dots');
 const strokesG = document.getElementById('strokes');
 const selectionG = document.getElementById('selection');
 const dragHandle = document.getElementById('dragHandle');
-const debugEl = document.getElementById('debug');
 
 // ═══════════════════════════════════════════════════════
 // TEST STROKES (hardcoded)
@@ -114,16 +102,10 @@ let selectionRing = null;
 // ═══════════════════════════════════════════════════════
 // DEBUG LOGGING
 // ═══════════════════════════════════════════════════════
-let logCount = 0;
 function dbg(msg, cls = '') {
-  logCount++;
-  const line = document.createElement('div');
-  if (cls) line.className = cls;
   const ts = new Date().toLocaleTimeString('en-US', { hour12: false, fractionalSecondDigits: 2 });
-  line.textContent = `[${ts}] ${msg}`;
-  debugEl.prepend(line);
-  // Keep max 100 lines
-  while (debugEl.children.length > 100) debugEl.lastChild.remove();
+  const prefix = cls === 'err' ? '❌' : cls === 'warn' ? '⚠️' : cls === 'ok' ? '✅' : 'ℹ️';
+  console.log(`${prefix} [${ts}] ${msg}`);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -236,7 +218,17 @@ function updateStrokeEl(idx) {
   const el = strokeEls[idx];
   if (!el) return;
   if (s.curved) {
-    el.setAttribute('d', `M${s.x1},${s.y1} Q${s.cx},${s.cy} ${s.x2},${s.y2}`);
+    // If element is a <line>, replace it with a <path>
+    if (el.tagName === 'line') {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('stroke', '#ccc');
+      path.setAttribute('stroke-width', 11);
+      path.setAttribute('stroke-linecap', 'round');
+      path.setAttribute('fill', 'none');
+      el.replaceWith(path);
+      strokeEls[idx] = path;
+    }
+    strokeEls[idx].setAttribute('d', `M${s.x1},${s.y1} Q${s.cx},${s.cy} ${s.x2},${s.y2}`);
   } else {
     el.setAttribute('x1', s.x1); el.setAttribute('y1', s.y1);
     el.setAttribute('x2', s.x2); el.setAttribute('y2', s.y2);
@@ -775,10 +767,6 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   dbg('Reset strokes to initial state', 'state');
 });
 
-document.getElementById('clearLog').addEventListener('click', () => {
-  debugEl.innerHTML = '';
-  logCount = 0;
-});
 
 // ═══════════════════════════════════════════════════════
 // INIT
