@@ -122,12 +122,11 @@ let dotEls = [];
 // SVG COORDINATE CONVERSION
 // ═══════════════════════════════════════════════════════
 function svgPt(clientX, clientY) {
-  const rect = svg.getBoundingClientRect();
-  const vb = svg.viewBox.baseVal;
-  return {
-    x: (clientX - rect.left) * vb.width / rect.width,
-    y: (clientY - rect.top) * vb.height / rect.height
-  };
+  const pt = svg.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  const svgP = pt.matrixTransform(svg.getScreenCTM().inverse());
+  return { x: svgP.x, y: svgP.y };
 }
 
 // ═══════════════════════════════════════════════════════
