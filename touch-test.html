@@ -609,6 +609,7 @@ function handleTouchMove(p) {
     const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
     if (dist > t.dragPromote) {
       state = 'DRAGGING';
+      dbgStateText.textContent = 'DRAGGING';
       console.log(`Promoted DRAG_PENDING→DRAGGING (dist=${dist.toFixed(1)} > ${t.dragPromote.toFixed(1)})`);
     } else {
       return;
