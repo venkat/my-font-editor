@@ -113,8 +113,9 @@ const initialStrokes = [
 let strokes = JSON.parse(JSON.stringify(initialStrokes));
 
 // ═══════════════════════════════════════════════════════
-// STATE (Strategy B: Sticky DRAG_PENDING)
-// IDLE → EDIT_PENDING → SELECTED → DRAG_PENDING → DRAGGING
+// STATE
+// Draw: IDLE → DRAWING → IDLE
+// Edit: IDLE → DRAG_PENDING → DRAGGING → IDLE
 // ═══════════════════════════════════════════════════════
 let mode = 'DRAW';  // 'DRAW' or 'EDIT'
 let state = 'IDLE';
@@ -771,40 +772,63 @@ function handleDrawEnd(p) {
 }
 
 // ═══════════════════════════════════════════════════════
-// EDIT MODE HANDLERS (Strategy B: Sticky DRAG_PENDING)
+// EDIT MODE HANDLERS (Direct drag — no select step)
+// Touch determines what's under finger, drag starts immediately.
 // ═══════════════════════════════════════════════════════
 function handleEditStart(p) {
   const t = svgThresholds();
 
-  if (selectedItem) {
-    // Any touch when selected → DRAG_PENDING
-    pushUndo();
-    state = 'DRAG_PENDING';
-    if (selectedItem.type === 'stroke') {
-      const s = strokes[selectedItem.strokeIdx];
-      dragInfo = {
-        type: 'curve', strokeIdx: selectedItem.strokeIdx,
-        cx: s.curved ? s.cx : (s.x1 + s.x2) / 2,
-        cy: s.curved ? s.cy : (s.y1 + s.y2) / 2
-      };
-    } else {
-      dragInfo = {
-        type: 'dot', strokeIdx: selectedItem.strokeIdx,
-        endpoint: selectedItem.endpoint,
-        startX: selectedItem.x, startY: selectedItem.y
-      };
-    }
-    console.log(`DRAG_PENDING (sticky)`);
-    updateDebugOverlays(p, t.strokeMidThresh);
-    return;
-  }
-
-  // Nothing selected — look for element
+  // Find what's under the finger: endpoint wins over stroke mid
   const ep = findEndpointAt(p.x, p.y, t.endpointRadius);
   const sm = findStrokeMidAt(p.x, p.y, t.strokeMidThresh);
-  state = 'EDIT_PENDING';
-  console.log(`EDIT_PENDING ep=${ep ? 's' + ep.strokeIdx : '-'} sm=${sm ? 's' + sm.strokeIdx : '-'} candidates=${lastCandidates.length}`);
+
+  if (ep && sm) {
+    // Both — endpoint wins unless short-stroke tiebreaker
+    const s = strokes[sm.strokeIdx];
+    const strokeLen = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+    if (sm.strokeIdx === ep.strokeIdx && strokeLen < SP * 2) {
+      // Short stroke — bend it
+      setupStrokeDrag(sm.strokeIdx);
+    } else if (ep.dist < sm.dist) {
+      setupDotDrag(ep);
+    } else {
+      setupStrokeDrag(sm.strokeIdx);
+    }
+  } else if (ep) {
+    setupDotDrag(ep);
+  } else if (sm) {
+    setupStrokeDrag(sm.strokeIdx);
+  } else {
+    state = 'IDLE';
+    selectedItem = null;
+    updateSelectionVisual();
+    console.log(`EDIT: nothing under finger`);
+  }
+
   updateDebugOverlays(p, t.strokeMidThresh);
+}
+
+function setupDotDrag(ep) {
+  pushUndo();
+  selectedItem = { type: 'dot', strokeIdx: ep.strokeIdx, endpoint: ep.endpoint, x: ep.x, y: ep.y };
+  dragInfo = { type: 'dot', strokeIdx: ep.strokeIdx, endpoint: ep.endpoint, startX: ep.x, startY: ep.y };
+  state = 'DRAG_PENDING';
+  updateSelectionVisual();
+  console.log(`DRAG_PENDING dot s${ep.strokeIdx}.${ep.endpoint} (dist=${ep.dist.toFixed(1)})`);
+}
+
+function setupStrokeDrag(strokeIdx) {
+  pushUndo();
+  const s = strokes[strokeIdx];
+  selectedItem = { type: 'stroke', strokeIdx };
+  dragInfo = {
+    type: 'curve', strokeIdx,
+    cx: s.curved ? s.cx : (s.x1 + s.x2) / 2,
+    cy: s.curved ? s.cy : (s.y1 + s.y2) / 2
+  };
+  state = 'DRAG_PENDING';
+  updateSelectionVisual();
+  console.log(`DRAG_PENDING stroke s${strokeIdx}`);
 }
 
 function handleEditMove(p) {
@@ -827,24 +851,21 @@ function handleEditMove(p) {
 }
 
 function handleEditEnd(p) {
-  const t = svgThresholds();
-
   if (state === 'DRAG_PENDING') {
-    // Was a tap, not a drag — roll back undo
+    // Didn't move enough — cancel, roll back
     popUndo();
     dragInfo = null;
-    console.log(`DRAG_PENDING→tap, rolled back undo`);
-    handleTapSelection(p, t);
+    selectedItem = null;
+    state = 'IDLE';
+    updateSelectionVisual();
+    updateDebugOverlays(pressStart, svgThresholds().strokeMidThresh);
+    console.log(`DRAG_PENDING→tap, cancelled`);
     return;
   }
 
   if (state === 'DRAGGING') {
     finishDrag();
     return;
-  }
-
-  if (state === 'EDIT_PENDING') {
-    handleTapSelection(p, t);
   }
 }
 
@@ -900,63 +921,10 @@ function performDrag(p) {
 function finishDrag() {
   console.log(`Drag finished (${dragInfo?.type})`);
   dragInfo = null;
-  state = 'SELECTED';
+  selectedItem = null;
+  state = 'IDLE';
   updateSelectionVisual();
   updateDebugOverlays(null);
-}
-
-function handleTapSelection(p, t) {
-  if (!pressStart) { state = 'IDLE'; updateDebugOverlays(null); return; }
-  const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
-  const duration = Date.now() - pressStart.time;
-  const wasTap = dist < t.tapThresh && duration < 300;
-
-  if (!wasTap) {
-    console.log(`Not a tap (dist=${dist.toFixed(1)}, dur=${duration}ms)`);
-    state = selectedItem ? 'SELECTED' : 'IDLE';
-    updateSelectionVisual();
-    updateDebugOverlays(pressStart, t.strokeMidThresh);
-    return;
-  }
-
-  // Use pressStart position for hit detection
-  const ep = findEndpointAt(pressStart.x, pressStart.y, t.endpointRadius);
-  const sm = findStrokeMidAt(pressStart.x, pressStart.y, t.strokeMidThresh);
-
-  let selectEndpoint = false, selectStroke = false;
-  if (ep && sm) {
-    // Both found — short stroke tiebreaker or distance comparison
-    const s = strokes[sm.strokeIdx];
-    const strokeLen = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
-    if (sm.strokeIdx === ep.strokeIdx && strokeLen < SP * 2) {
-      selectStroke = true;
-      console.log(`Short stroke tiebreaker → stroke`);
-    } else {
-      selectEndpoint = ep.dist < sm.dist;
-      selectStroke = !selectEndpoint;
-    }
-  } else if (ep) {
-    selectEndpoint = true;
-  } else if (sm) {
-    selectStroke = true;
-  }
-
-  if (selectEndpoint) {
-    selectedItem = { type: 'dot', strokeIdx: ep.strokeIdx, endpoint: ep.endpoint, x: ep.x, y: ep.y };
-    state = 'SELECTED';
-    console.log(`Selected DOT (stroke ${ep.strokeIdx}, ${ep.endpoint}, dist=${ep.dist.toFixed(1)})`);
-  } else if (selectStroke) {
-    selectedItem = { type: 'stroke', strokeIdx: sm.strokeIdx };
-    state = 'SELECTED';
-    console.log(`Selected STROKE ${sm.strokeIdx} (dist=${sm.dist.toFixed(1)}, candidates=${lastCandidates.length})`);
-  } else {
-    selectedItem = null;
-    state = 'IDLE';
-    console.log(`Deselected (tap empty)`);
-  }
-
-  updateSelectionVisual();
-  updateDebugOverlays(pressStart, t.strokeMidThresh);
 }
 
 // ═══════════════════════════════════════════════════════
