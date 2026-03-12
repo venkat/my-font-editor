@@ -16,6 +16,8 @@ body { background: #1a1a2e; color: #eee; font-family: system-ui, sans-serif; ove
   padding: 6px 16px; border: none; border-radius: 4px; background: #e94560; color: #fff;
   font-size: 13px; cursor: pointer;
 }
+.topbar button.mode { background: #333; }
+.topbar button.mode.active { background: #4c1d95; }
 .topbar .info { color: #888; font-family: monospace; font-size: 11px; margin-left: auto; }
 
 svg { display: block; width: 100%; height: calc(100dvh - 48px); background: #0f0f23; }
@@ -24,14 +26,17 @@ svg { display: block; width: 100%; height: calc(100dvh - 48px); background: #0f0
 <body>
 
 <div class="topbar">
-  <button id="resetBtn">Reset</button>
+  <button id="drawBtn" class="mode active">Draw</button>
+  <button id="editBtn" class="mode">Edit</button>
   <button id="undoBtn">Undo</button>
+  <button id="resetBtn">Reset</button>
   <span class="info" id="infoDisplay"></span>
 </div>
 
 <svg id="canvas" viewBox="0 0 200 373" preserveAspectRatio="xMidYMid meet">
   <g id="dots"></g>
   <g id="strokes"></g>
+  <g id="preview"></g>
   <g id="selection"></g>
   <g id="debug"></g>
 </svg>
@@ -52,9 +57,12 @@ const ROWS_END = 11;
 const svg = document.getElementById('canvas');
 const dotsG = document.getElementById('dots');
 const strokesG = document.getElementById('strokes');
+const previewG = document.getElementById('preview');
 const selectionG = document.getElementById('selection');
 const debugG = document.getElementById('debug');
 const infoDisplay = document.getElementById('infoDisplay');
+const drawBtn = document.getElementById('drawBtn');
+const editBtn = document.getElementById('editBtn');
 
 // ═══════════════════════════════════════════════════════
 // SCREEN-PIXEL THRESHOLDS (converted to SVG at each event)
@@ -83,7 +91,7 @@ function svgThresholds() {
 function updateInfo() {
   const t = svgThresholds();
   infoDisplay.textContent =
-    `scale:${t.scale.toFixed(3)}  ep:${t.endpointRadius.toFixed(1)}  mid:${t.strokeMidThresh.toFixed(1)}  tap:${t.tapThresh.toFixed(1)}  drag:${t.dragPromote.toFixed(1)}`;
+    `${mode} | scale:${t.scale.toFixed(3)}  ep:${t.endpointRadius.toFixed(1)}  mid:${t.strokeMidThresh.toFixed(1)}  tap:${t.tapThresh.toFixed(1)}`;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -108,6 +116,7 @@ let strokes = JSON.parse(JSON.stringify(initialStrokes));
 // STATE (Strategy B: Sticky DRAG_PENDING)
 // IDLE → EDIT_PENDING → SELECTED → DRAG_PENDING → DRAGGING
 // ═══════════════════════════════════════════════════════
+let mode = 'DRAW';  // 'DRAW' or 'EDIT'
 let state = 'IDLE';
 let selectedItem = null;  // { type: 'dot'|'stroke', strokeIdx, endpoint?, x?, y? }
 let dragInfo = null;
@@ -115,8 +124,14 @@ let pressStart = null;
 let undoStack = [];
 let lastCandidates = [];  // for debug visualization
 
+// Draw mode state
+let drawStartDot = null;  // grid dot where drawing started
+let drawHoverDot = null;  // grid dot being hovered during draw
+let previewLineEl = null; // SVG line element for live preview
+
 let strokeEls = [];
 let dotEls = [];
+let gridDotEls = {}; // key: "x,y" → circle element
 
 // ═══════════════════════════════════════════════════════
 // SVG COORDINATE CONVERSION
@@ -135,18 +150,22 @@ function svgPt(clientX, clientY) {
 function buildScene() {
   dotsG.innerHTML = '';
   strokesG.innerHTML = '';
+  previewG.innerHTML = '';
   strokeEls = [];
   dotEls = [];
+  gridDotEls = {};
 
-  // Grid dots
+  // Grid dots (background — drawn under strokes)
   for (let c = 0; c <= COLS; c++) {
     for (let r = ROWS_START; r <= ROWS_END; r++) {
+      const x = MX + c * SP, y = MY + r * SP;
       const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      circle.setAttribute('cx', MX + c * SP);
-      circle.setAttribute('cy', MY + r * SP);
+      circle.setAttribute('cx', x);
+      circle.setAttribute('cy', y);
       circle.setAttribute('r', 3);
       circle.setAttribute('fill', '#555');
       dotsG.appendChild(circle);
+      gridDotEls[`${x},${y}`] = circle;
     }
   }
 
@@ -156,6 +175,16 @@ function buildScene() {
     strokesG.appendChild(el);
     strokeEls.push(el);
   });
+
+  // Preview line (persistent element, hidden by default)
+  previewLineEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  previewLineEl.setAttribute('stroke', '#ccc');
+  previewLineEl.setAttribute('stroke-width', 11);
+  previewLineEl.setAttribute('stroke-linecap', 'round');
+  previewLineEl.setAttribute('opacity', '0.4');
+  previewLineEl.setAttribute('display', 'none');
+  previewLineEl.setAttribute('pointer-events', 'none');
+  previewG.appendChild(previewLineEl);
 
   drawEndpointDots();
   buildSelectionEls();
@@ -203,6 +232,56 @@ function drawEndpointDots() {
     dotsG.appendChild(c);
     dotEls.push(c);
   });
+}
+
+// Update grid dot colors for draw mode visual feedback
+function updateGridDotVisuals() {
+  // Collect endpoints
+  const endpoints = new Set();
+  strokes.forEach(s => {
+    endpoints.add(`${s.x1},${s.y1}`);
+    endpoints.add(`${s.x2},${s.y2}`);
+  });
+
+  for (const [key, el] of Object.entries(gridDotEls)) {
+    const isStart = drawStartDot && key === `${drawStartDot.x},${drawStartDot.y}`;
+    const isHover = drawHoverDot && key === `${drawHoverDot.x},${drawHoverDot.y}`;
+    const isEndpoint = endpoints.has(key);
+
+    if (isStart) {
+      el.setAttribute('fill', '#1e1b2e');
+      el.setAttribute('r', 7);
+    } else if (isHover && mode === 'DRAW') {
+      el.setAttribute('fill', '#a78bfa');
+      el.setAttribute('r', 8);
+    } else if (isEndpoint) {
+      el.setAttribute('fill', '#a855f7');
+      el.setAttribute('r', 7);
+    } else {
+      el.setAttribute('fill', '#555');
+      el.setAttribute('r', 3);
+    }
+  }
+}
+
+// Update the preview line during drawing
+function updatePreviewLine() {
+  if (!previewLineEl) return;
+  if (!drawStartDot || mode !== 'DRAW') {
+    previewLineEl.setAttribute('display', 'none');
+    return;
+  }
+  const endX = drawHoverDot ? drawHoverDot.x : (pressStart ? pressStart.x : drawStartDot.x);
+  const endY = drawHoverDot ? drawHoverDot.y : (pressStart ? pressStart.y : drawStartDot.y);
+  if (endX === drawStartDot.x && endY === drawStartDot.y) {
+    previewLineEl.setAttribute('display', 'none');
+    return;
+  }
+  previewLineEl.setAttribute('x1', drawStartDot.x);
+  previewLineEl.setAttribute('y1', drawStartDot.y);
+  previewLineEl.setAttribute('x2', endX);
+  previewLineEl.setAttribute('y2', endY);
+  previewLineEl.setAttribute('display', 'block');
 }
 
 function updateStrokeEl(idx) {
@@ -377,7 +456,7 @@ function buildDebugEls() {
 
 function updateDebugOverlays(tapPt, threshold) {
   // Always update state/selection text
-  dbgStateText.textContent = state;
+  dbgStateText.textContent = `${mode}:${state}`;
 
   if (selectedItem) {
     dbgSelText.textContent = selectedItem.type === 'dot'
@@ -526,6 +605,29 @@ function snapToGrid(x, y) {
   };
 }
 
+// All valid grid dot positions
+function allDots() {
+  const d = [];
+  for (let r = ROWS_START; r <= ROWS_END; r++)
+    for (let c = 0; c <= COLS; c++)
+      d.push({ x: MX + c * SP, y: MY + r * SP, c, r });
+  return d;
+}
+
+// Find nearest grid dot within threshold (screen pixels converted to SVG)
+function findNearestDot(px, py, threshold) {
+  let best = null, bestDist = threshold;
+  for (const d of allDots()) {
+    const dist = Math.hypot(d.x - px, d.y - py);
+    if (dist < bestDist) { bestDist = dist; best = d; }
+  }
+  return best;
+}
+
+function dotEq(a, b) {
+  return a && b && a.x === b.x && a.y === b.y;
+}
+
 function clampControlPoint(x1, y1, x2, y2, cx, cy) {
   const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
   const maxDist = SP * 2.5;
@@ -562,13 +664,116 @@ function rebuildStrokes() {
     strokeEls.push(el);
   });
   drawEndpointDots();
+  updateGridDotVisuals();
   updateSelectionVisual();
 }
 
 // ═══════════════════════════════════════════════════════
-// STRATEGY B: STICKY DRAG_PENDING
+// MODE SWITCHING
 // ═══════════════════════════════════════════════════════
-function handleTouchStart(p) {
+function setMode(m) {
+  mode = m;
+  drawBtn.classList.toggle('active', m === 'DRAW');
+  editBtn.classList.toggle('active', m === 'EDIT');
+  // Clear state when switching modes
+  selectedItem = null;
+  dragInfo = null;
+  drawStartDot = null;
+  drawHoverDot = null;
+  state = 'IDLE';
+  updatePreviewLine();
+  updateGridDotVisuals();
+  updateSelectionVisual();
+  updateDebugOverlays(null);
+  updateInfo();
+  console.log(`Mode → ${m}`);
+}
+
+// ═══════════════════════════════════════════════════════
+// DRAW MODE HANDLERS
+// ═══════════════════════════════════════════════════════
+function handleDrawStart(p) {
+  const t = svgThresholds();
+  const snapRadius = SCREEN_ENDPOINT_RADIUS * t.scale;  // use endpoint radius for snap
+  const d = findNearestDot(p.x, p.y, snapRadius);
+  if (d) {
+    drawStartDot = d;
+    drawHoverDot = d;
+    state = 'DRAWING';
+    updateGridDotVisuals();
+    console.log(`DRAW start at (${d.x},${d.y})`);
+  } else {
+    state = 'IDLE';
+  }
+  updateDebugOverlays(p, snapRadius);
+}
+
+function handleDrawMove(p) {
+  if (state !== 'DRAWING' || !drawStartDot) return;
+  const t = svgThresholds();
+  const snapRadius = SCREEN_ENDPOINT_RADIUS * t.scale;
+  const d = findNearestDot(p.x, p.y, snapRadius);
+  const oldHover = drawHoverDot;
+  drawHoverDot = d;
+  // Update preview line directly (no DOM rebuild — safe for iOS)
+  if (drawHoverDot) {
+    const endX = drawHoverDot.x, endY = drawHoverDot.y;
+    if (endX !== drawStartDot.x || endY !== drawStartDot.y) {
+      previewLineEl.setAttribute('x1', drawStartDot.x);
+      previewLineEl.setAttribute('y1', drawStartDot.y);
+      previewLineEl.setAttribute('x2', endX);
+      previewLineEl.setAttribute('y2', endY);
+      previewLineEl.setAttribute('display', 'block');
+    } else {
+      previewLineEl.setAttribute('display', 'none');
+    }
+  } else {
+    // Show line to raw finger position when no snap
+    previewLineEl.setAttribute('x1', drawStartDot.x);
+    previewLineEl.setAttribute('y1', drawStartDot.y);
+    previewLineEl.setAttribute('x2', p.x);
+    previewLineEl.setAttribute('y2', p.y);
+    previewLineEl.setAttribute('display', 'block');
+  }
+  // Only update dot visuals if hover changed
+  if (!dotEq(oldHover, drawHoverDot)) {
+    updateGridDotVisuals();
+  }
+}
+
+function handleDrawEnd(p) {
+  if (state !== 'DRAWING' || !drawStartDot) {
+    state = 'IDLE';
+    return;
+  }
+  const t = svgThresholds();
+  const snapRadius = SCREEN_ENDPOINT_RADIUS * t.scale;
+  const d = findNearestDot(p.x, p.y, snapRadius);
+  if (d && !dotEq(d, drawStartDot)) {
+    // Create new stroke
+    pushUndo();
+    strokes.push({ x1: drawStartDot.x, y1: drawStartDot.y, x2: d.x, y2: d.y, curved: false });
+    // Add the new stroke element
+    const el = createStrokeEl(strokes[strokes.length - 1]);
+    strokesG.appendChild(el);
+    strokeEls.push(el);
+    drawEndpointDots();
+    console.log(`DRAW stroke (${drawStartDot.x},${drawStartDot.y})→(${d.x},${d.y})`);
+  } else {
+    console.log(`DRAW cancelled (same dot or no snap)`);
+  }
+  drawStartDot = null;
+  drawHoverDot = null;
+  state = 'IDLE';
+  previewLineEl.setAttribute('display', 'none');
+  updateGridDotVisuals();
+  updateDebugOverlays(null);
+}
+
+// ═══════════════════════════════════════════════════════
+// EDIT MODE HANDLERS (Strategy B: Sticky DRAG_PENDING)
+// ═══════════════════════════════════════════════════════
+function handleEditStart(p) {
   const t = svgThresholds();
 
   if (selectedItem) {
@@ -602,14 +807,14 @@ function handleTouchStart(p) {
   updateDebugOverlays(p, t.strokeMidThresh);
 }
 
-function handleTouchMove(p) {
+function handleEditMove(p) {
   const t = svgThresholds();
 
   if (state === 'DRAG_PENDING') {
     const dist = Math.hypot(p.x - pressStart.x, p.y - pressStart.y);
     if (dist > t.dragPromote) {
       state = 'DRAGGING';
-      dbgStateText.textContent = 'DRAGGING';
+      dbgStateText.textContent = `${mode}:DRAGGING`;
       console.log(`Promoted DRAG_PENDING→DRAGGING (dist=${dist.toFixed(1)} > ${t.dragPromote.toFixed(1)})`);
     } else {
       return;
@@ -621,7 +826,7 @@ function handleTouchMove(p) {
   }
 }
 
-function handleTouchEnd(p) {
+function handleEditEnd(p) {
   const t = svgThresholds();
 
   if (state === 'DRAG_PENDING') {
@@ -641,6 +846,22 @@ function handleTouchEnd(p) {
   if (state === 'EDIT_PENDING') {
     handleTapSelection(p, t);
   }
+}
+
+// ═══════════════════════════════════════════════════════
+// DISPATCH TO MODE
+// ═══════════════════════════════════════════════════════
+function handleTouchStart(p) {
+  if (mode === 'DRAW') handleDrawStart(p);
+  else handleEditStart(p);
+}
+function handleTouchMove(p) {
+  if (mode === 'DRAW') handleDrawMove(p);
+  else handleEditMove(p);
+}
+function handleTouchEnd(p) {
+  if (mode === 'DRAW') handleDrawEnd(p);
+  else handleEditEnd(p);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -771,6 +992,10 @@ svg.addEventListener('touchcancel', () => {
   state = selectedItem ? 'SELECTED' : 'IDLE';
   dragInfo = null;
   pressStart = null;
+  drawStartDot = null;
+  drawHoverDot = null;
+  if (previewLineEl) previewLineEl.setAttribute('display', 'none');
+  updateGridDotVisuals();
   updateDebugOverlays(null);
 }, { passive: false });
 
@@ -803,14 +1028,21 @@ svg.addEventListener('mouseup', e => {
 // ═══════════════════════════════════════════════════════
 // UI CONTROLS
 // ═══════════════════════════════════════════════════════
+drawBtn.addEventListener('click', () => setMode('DRAW'));
+editBtn.addEventListener('click', () => setMode('EDIT'));
+
 document.getElementById('resetBtn').addEventListener('click', () => {
   strokes = JSON.parse(JSON.stringify(initialStrokes));
   state = 'IDLE';
   selectedItem = null;
   dragInfo = null;
+  drawStartDot = null;
+  drawHoverDot = null;
   undoStack = [];
   lastCandidates = [];
   rebuildStrokes();
+  updatePreviewLine();
+  updateGridDotVisuals();
   updateDebugOverlays(null);
   console.log('Reset');
 });
@@ -820,6 +1052,10 @@ document.getElementById('undoBtn').addEventListener('click', () => {
   selectedItem = null;
   state = 'IDLE';
   dragInfo = null;
+  drawStartDot = null;
+  drawHoverDot = null;
+  previewLineEl.setAttribute('display', 'none');
+  updateGridDotVisuals();
   updateDebugOverlays(null);
   console.log('Undo');
 });
@@ -832,8 +1068,9 @@ window.addEventListener('orientationchange', updateInfo);
 // ═══════════════════════════════════════════════════════
 buildScene();
 updateInfo();
+updateGridDotVisuals();
 updateDebugOverlays(null);
-console.log('Touch Edit Test ready (iPad, Strategy B, closest-match)');
+console.log('Touch Test ready (Draw+Edit, iPad, closest-match)');
 console.log('Strokes: 0,1=parallel verticals(31px apart) 2=diagonal 3=short horiz 4=curved');
 </script>
 </body>
