@@ -302,8 +302,15 @@ function updateSelectionVisual() {
       selStrokeLine.setAttribute('x2', s.x2); selStrokeLine.setAttribute('y2', s.y2);
       selStrokeLine.setAttribute('display', 'block');
     }
-    const midX = s.curved ? s.cx : (s.x1 + s.x2) / 2;
-    const midY = s.curved ? s.cy : (s.y1 + s.y2) / 2;
+    // Visual midpoint: t=0.5 on bezier, not the control point
+    let midX, midY;
+    if (s.curved) {
+      midX = 0.25 * s.x1 + 0.5 * s.cx + 0.25 * s.x2;
+      midY = 0.25 * s.y1 + 0.5 * s.cy + 0.25 * s.y2;
+    } else {
+      midX = (s.x1 + s.x2) / 2;
+      midY = (s.y1 + s.y2) / 2;
+    }
     dragHandleEl.setAttribute('cx', midX);
     dragHandleEl.setAttribute('cy', midY);
     dragHandleEl.setAttribute('display', 'block');
